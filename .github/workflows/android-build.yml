@@ -41,6 +41,14 @@ jobs:
           npx cap init "Partage Ecran" "com.lorenzmini1.partager_son_cran" --web-dir=www
           npx cap add android
 
+      - name: Generate App Icons
+        run: |
+          if [ -f "icon.png" ]; then
+            npx capacitor-assets generate --android
+          else
+            echo "Pas d'icon.png trouvé, utilisation de l'icône par défaut."
+          fi
+
       - name: Sync Code to Android
         run: npx cap sync
 
