@@ -29,6 +29,8 @@ jobs:
         run: |
           npm install
           npm install @capacitor/android
+          # On donne les permissions à tous les outils Node locaux installés
+          chmod -R +x node_modules/.bin || true
 
       - name: Prepare Web Directory
         run: |
@@ -44,6 +46,8 @@ jobs:
       - name: Generate App Icons
         run: |
           if [ -f "icon.png" ]; then
+            # On s'assure que l'outil de génération a les droits d'exécution
+            chmod +x node_modules/.bin/capacitor-assets || true
             npx capacitor-assets generate --android
           else
             echo "Pas d'icon.png trouvé."
@@ -51,6 +55,7 @@ jobs:
 
       - name: Set Permissions and Sync
         run: |
+          # On force les permissions d'exécution sur le compilateur Gradle d'Android
           chmod +x android/gradlew
           npx cap sync
 
