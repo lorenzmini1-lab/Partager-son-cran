@@ -1,0 +1,6 @@
+{
+  "appId": "com.lorenzmini1.partager_son_cran",
+  "appName": "Partage Ecran",
+  "webDir": ".",
+  "bundledWebRuntime": false
+}
