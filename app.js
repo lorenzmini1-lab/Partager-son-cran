@@ -14,7 +14,6 @@ const answerOut = document.getElementById('answerOut');
 const videoElement = document.getElementById('screenVideo');
 const statusDiv = document.getElementById('status');
 
-// Configuration des serveurs STUN publics
 const rtcConfig = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -22,19 +21,31 @@ const rtcConfig = {
     ]
 };
 
-// --- VÉRIFICATION DE COMPATIBILITÉ ---
-// Je vérifie si l'API est disponible dans l'environnement actuel
-const isCompatible = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+// --- ZONE DE DIAGNOSTIC ---
+function runDiagnostic() {
+    const isHttps = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const hasMediaDevices = !!navigator.mediaDevices;
+    const hasGetDisplayMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
 
-if (!isCompatible) {
-    statusDiv.style.color = "#ff4a5a";
-    if (window.location.protocol === 'file:') {
-        statusDiv.innerText = "Erreur : Tu ne peux pas tester le partage d'écran en ouvrant le fichier directement. Publie-le sur GitHub Pages ou utilise un serveur local (localhost).";
-    } else {
-        statusDiv.innerText = "Erreur : Ton navigateur ou ton appareil ne supporte pas le partage d'écran (exigé : ordinateur + HTTPS).";
+    if (!hasGetDisplayMedia) {
+        statusDiv.style.color = "#ff4a5a";
+        startShareBtn.disabled = true;
+
+        let errorMsg = "Erreur de sécurité/compatibilité : ";
+        if (!isHttps) {
+            errorMsg += "Tu dois obligatoirement utiliser HTTPS ou localhost. Actuellement, tu es en '" + window.location.protocol + "'. Déploie le code sur GitHub Pages pour régler ça !";
+        } else if (!hasMediaDevices) {
+            errorMsg += "L'API de capture est totalement bloquée par ton navigateur ou ton appareil.";
+        } else {
+            errorMsg += "Ton navigateur ne supporte pas le partage d'écran (getDisplayMedia n'existe pas). Assure-toi d'être sur un ordinateur et pas sur un téléphone.";
+        }
+        statusDiv.innerText = errorMsg;
+        return false;
     }
-    startShareBtn.disabled = true;
+    return true;
 }
+
+const isCompatible = runDiagnostic();
 
 // --- RÔLE 1 : L'ÉMETTEUR (TOI) ---
 startShareBtn.onclick = async () => {
@@ -43,6 +54,7 @@ startShareBtn.onclick = async () => {
     try {
         localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         videoElement.srcObject = localStream;
+        statusDiv.style.color = "#06d6a0";
         statusDiv.innerText = "Statut : Écran capturé. Génération de l'invitation...";
 
         localConnection = new RTCPeerConnection(rtcConfig);
@@ -55,7 +67,6 @@ startShareBtn.onclick = async () => {
         localConnection.onicecandidate = (event) => {
             if (!event.candidate) {
                 offerOut.value = btoa(JSON.stringify(localConnection.localDescription));
-                statusDiv.style.color = "#06d6a0";
                 statusDiv.innerText = "Statut : Invitation prête ! Envoie-la à ton ami.";
                 connectBtn.disabled = false;
             }
@@ -73,6 +84,7 @@ connectBtn.onclick = async () => {
     try {
         const answer = JSON.parse(atob(answerRaw));
         await localConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        statusDiv.style.color = "#06d6a0";
         statusDiv.innerText = "Statut : Connexion établie ! Partage en cours.";
     } catch (err) {
         statusDiv.style.color = "#ff4a5a";
@@ -106,6 +118,7 @@ createAnswerBtn.onclick = async () => {
         remoteConnection.onicecandidate = (event) => {
             if (!event.candidate) {
                 answerOut.value = btoa(JSON.stringify(remoteConnection.localDescription));
+                statusDiv.style.color = "#06d6a0";
                 statusDiv.innerText = "Statut : Réponse générée. Renvoie-la à ton ami.";
             }
         };
