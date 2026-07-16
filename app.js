@@ -31,17 +31,19 @@ function runDiagnostic() {
         statusDiv.style.color = "#ff4a5a";
         startShareBtn.disabled = true;
 
-        let errorMsg = "Erreur de sécurité/compatibilité : ";
+        let errorMsg = "Erreur : ";
         if (!isHttps) {
-            errorMsg += "Tu dois obligatoirement utiliser HTTPS ou localhost. Actuellement, tu es en '" + window.location.protocol + "'. Déploie le code sur GitHub Pages pour régler ça !";
+            errorMsg += "Le protocole HTTPS est obligatoire pour le partage d'écran. Actuellement, tu es en '" + window.location.protocol + "'.";
         } else if (!hasMediaDevices) {
-            errorMsg += "L'API de capture est totalement bloquée par ton navigateur ou ton appareil.";
+            errorMsg += "L'API de capture (mediaDevices) est totalement bloquée ou absente sur ton appareil.";
         } else {
-            errorMsg += "Ton navigateur ne supporte pas le partage d'écran (getDisplayMedia n'existe pas). Assure-toi d'être sur un ordinateur et pas sur un téléphone.";
+            errorMsg += "Le partage d'écran n'est pas supporté sur cet appareil/navigateur (getDisplayMedia manquant). Es-tu bien sur un ordinateur ?";
         }
         statusDiv.innerText = errorMsg;
         return false;
     }
+    statusDiv.style.color = "#06d6a0";
+    statusDiv.innerText = "Statut : Prêt (Compatible HTTPS détecté !)";
     return true;
 }
 
