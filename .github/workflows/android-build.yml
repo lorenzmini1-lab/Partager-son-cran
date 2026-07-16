@@ -29,7 +29,6 @@ jobs:
         run: |
           npm install
           npm install @capacitor/android
-          # On donne les permissions à tous les outils Node locaux installés
           chmod -R +x node_modules/.bin || true
 
       - name: Prepare Web Directory
@@ -43,10 +42,21 @@ jobs:
           npx cap init "Partage Ecran" "com.lorenzmini1.partager_son_cran" --web-dir=www
           npx cap add android
 
+      - name: Inject Android Permissions
+        run: |
+          # Cette commande ajoute automatiquement les autorisations Caméra et Micro dans le fichier AndroidManifest
+          node -e "
+          const fs = require('fs');
+          const file = 'android/app/src/main/AndroidManifest.xml';
+          let content = fs.readFileSync(file, 'utf8');
+          const permissions = '\n    <uses-permission android:name=\"android.permission.CAMERA\" />\n    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />\n    <uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />';
+          content = content.replace('<manifest', '<manifest' + permissions);
+          fs.writeFileSync(file, content, 'utf8');
+          "
+
       - name: Generate App Icons
         run: |
           if [ -f "icon.png" ]; then
-            # On s'assure que l'outil de génération a les droits d'exécution
             chmod +x node_modules/.bin/capacitor-assets || true
             npx capacitor-assets generate --android
           else
@@ -55,7 +65,6 @@ jobs:
 
       - name: Set Permissions and Sync
         run: |
-          # On force les permissions d'exécution sur le compilateur Gradle d'Android
           chmod +x android/gradlew
           npx cap sync
 
