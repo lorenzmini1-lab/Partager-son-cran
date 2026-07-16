@@ -46,11 +46,13 @@ jobs:
           if [ -f "icon.png" ]; then
             npx capacitor-assets generate --android
           else
-            echo "Pas d'icon.png trouvé, utilisation de l'icône par défaut."
+            echo "Pas d'icon.png trouvé."
           fi
 
-      - name: Sync Code to Android
-        run: npx cap sync
+      - name: Set Permissions and Sync
+        run: |
+          chmod +x android/gradlew
+          npx cap sync
 
       - name: Build Android App (APK)
         run: |
