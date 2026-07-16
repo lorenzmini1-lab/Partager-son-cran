@@ -30,9 +30,15 @@ jobs:
           npm install
           npm install @capacitor/android
 
+      - name: Prepare Web Directory
+        run: |
+          mkdir -p www
+          cp index.html www/
+          cp app.js www/
+
       - name: Initialize Capacitor Android
         run: |
-          npx cap init "Partage Ecran" "com.lorenzmini1.partager_son_cran" --web-dir=.
+          npx cap init "Partage Ecran" "com.lorenzmini1.partager_son_cran" --web-dir=www
           npx cap add android
 
       - name: Sync Code to Android
