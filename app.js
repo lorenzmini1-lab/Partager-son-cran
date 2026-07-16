@@ -14,7 +14,7 @@ const answerOut = document.getElementById('answerOut');
 const videoElement = document.getElementById('screenVideo');
 const statusDiv = document.getElementById('status');
 
-// Configuration des serveurs STUN publics (gratuits, fournis par Google pour trouver les adresses IP publiques)
+// Configuration des serveurs STUN publics
 const rtcConfig = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -22,39 +22,51 @@ const rtcConfig = {
     ]
 };
 
+// --- VÉRIFICATION DE COMPATIBILITÉ ---
+// Je vérifie si l'API est disponible dans l'environnement actuel
+const isCompatible = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+
+if (!isCompatible) {
+    statusDiv.style.color = "#ff4a5a";
+    if (window.location.protocol === 'file:') {
+        statusDiv.innerText = "Erreur : Tu ne peux pas tester le partage d'écran en ouvrant le fichier directement. Publie-le sur GitHub Pages ou utilise un serveur local (localhost).";
+    } else {
+        statusDiv.innerText = "Erreur : Ton navigateur ou ton appareil ne supporte pas le partage d'écran (exigé : ordinateur + HTTPS).";
+    }
+    startShareBtn.disabled = true;
+}
+
 // --- RÔLE 1 : L'ÉMETTEUR (TOI) ---
 startShareBtn.onclick = async () => {
+    if (!isCompatible) return;
+    
     try {
-        // Demande l'autorisation de capturer l'écran
         localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         videoElement.srcObject = localStream;
         statusDiv.innerText = "Statut : Écran capturé. Génération de l'invitation...";
 
         localConnection = new RTCPeerConnection(rtcConfig);
         
-        // Ajoute le flux vidéo à la connexion P2P
         localStream.getTracks().forEach(track => localConnection.addTrack(track, localStream));
 
-        // Génère l'offre WebRTC
         const offer = await localConnection.createOffer();
         await localConnection.setLocalDescription(offer);
 
-        // On attend que tous les candidats ICE (chemins réseau) soient rassemblés pour avoir un code complet
         localConnection.onicecandidate = (event) => {
             if (!event.candidate) {
-                // Quand le rassemblement est fini, on affiche le code final encodé en Base64 pour simplifier le copier-coller
                 offerOut.value = btoa(JSON.stringify(localConnection.localDescription));
+                statusDiv.style.color = "#06d6a0";
                 statusDiv.innerText = "Statut : Invitation prête ! Envoie-la à ton ami.";
                 connectBtn.disabled = false;
             }
         };
     } catch (err) {
         console.error(err);
+        statusDiv.style.color = "#ff4a5a";
         statusDiv.innerText = "Erreur : " + err.message;
     }
 };
 
-// Finaliser la connexion côté Émetteur
 connectBtn.onclick = async () => {
     const answerRaw = answerIn.value.trim();
     if (!answerRaw) return;
@@ -63,6 +75,7 @@ connectBtn.onclick = async () => {
         await localConnection.setRemoteDescription(new RTCSessionDescription(answer));
         statusDiv.innerText = "Statut : Connexion établie ! Partage en cours.";
     } catch (err) {
+        statusDiv.style.color = "#ff4a5a";
         statusDiv.innerText = "Erreur lors de la connexion : " + err.message;
     }
 };
@@ -79,9 +92,9 @@ createAnswerBtn.onclick = async () => {
 
         remoteConnection = new RTCPeerConnection(rtcConfig);
 
-        // Quand le flux vidéo arrive, on l'affiche dans le lecteur vidéo
         remoteConnection.ontrack = (event) => {
             videoElement.srcObject = event.streams[0];
+            statusDiv.style.color = "#06d6a0";
             statusDiv.innerText = "Statut : Réception du flux vidéo en direct !";
         };
 
@@ -97,6 +110,7 @@ createAnswerBtn.onclick = async () => {
             }
         };
     } catch (err) {
+        statusDiv.style.color = "#ff4a5a";
         statusDiv.innerText = "Erreur de décodage : " + err.message;
     }
 };
