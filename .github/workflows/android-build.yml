@@ -44,13 +44,22 @@ jobs:
 
       - name: Inject Android Permissions
         run: |
-          # Cette commande ajoute automatiquement les autorisations Caméra et Micro dans le fichier AndroidManifest
           node -e "
           const fs = require('fs');
           const file = 'android/app/src/main/AndroidManifest.xml';
           let content = fs.readFileSync(file, 'utf8');
-          const permissions = '\n    <uses-permission android:name=\"android.permission.CAMERA\" />\n    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />\n    <uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />';
-          content = content.replace('<manifest', '<manifest' + permissions);
+          
+          // On prépare les blocs de permissions proprement
+          const permissions = '\n' +
+            '    <uses-permission android:name=\"android.permission.CAMERA\" />\n' +
+            '    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />\n' +
+            '    <uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />\n' +
+            '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />\n' +
+            '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION\" />\n';
+          
+          // On insère les permissions juste après la balise d'ouverture <manifest ...>
+          content = content.replace(/(<manifest[^>]*>)/, '\$1' + permissions);
+          
           fs.writeFileSync(file, content, 'utf8');
           "
 
