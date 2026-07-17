@@ -24,38 +24,87 @@ statusDiv.style.color = "#06d6a0";
 statusDiv.innerText = "Statut : Prêt";
 startShareBtn.innerText = "Partager l'écran";
 
-// --- AJOUT : OPTION D'AGRANDISSEMENT ---
-// Ajoute des styles de base à l'élément vidéo pour qu'il soit cliquable et réactif
-videoElement.style.cursor = "pointer";
-videoElement.style.transition = "transform 0.3s ease";
-videoElement.title = "Double-clique pour passer en plein écran";
+// --- AJOUT : STYLE POUR LE PLEIN ÉCRAN VIRTUEL ---
+// On injecte un petit style CSS pour notre mode "Plein écran alternatif" (infaillible sur WebView)
+const style = document.createElement('style');
+style.innerHTML = `
+  .virtual-fullscreen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 99999 !important;
+    background-color: black !important;
+    object-fit: contain !important;
+  }
+  .close-fullscreen-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 100000;
+    padding: 10px 15px;
+    background: rgba(255, 0, 0, 0.8);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+`;
+document.head.appendChild(style);
 
-// Fonction pour basculer en plein écran
+// Création d'un bouton pour quitter le plein écran virtuel
+const closeFsBtn = document.createElement('button');
+closeFsBtn.innerText = "Quitter le plein écran";
+closeFsBtn.className = "close-fullscreen-btn";
+closeFsBtn.style.display = "none";
+document.body.appendChild(closeFsBtn);
+
+videoElement.style.cursor = "pointer";
+videoElement.title = "Double-clique pour agrandir";
+
+// Fonction hybride : Plein écran natif OU virtuel si le natif est bloqué
 const toggleFullScreen = () => {
+    // 1. On tente d'abord la méthode classique (si le navigateur/WebView l'autorise)
     if (!document.fullscreenElement) {
-        if (videoElement.requestFullscreen) {
-            videoElement.requestFullscreen();
-        } else if (videoElement.webkitRequestFullscreen) { /* Safari / iOS */
-            videoElement.webkitRequestFullscreen();
-        } else if (videoElement.msRequestFullscreen) { /* IE11 */
-            videoElement.msRequestFullscreen();
-        }
+        videoElement.requestFullscreen?.()
+            .catch(() => {
+                // 2. Si le plein écran natif échoue ou est bloqué par la WebView, on applique le plan B (Plein écran virtuel)
+                applyVirtualFullscreen();
+            });
     } else {
-        if (document.exitFullscreen) {
-            document.exitFullscreen();
-        }
+        document.exitFullscreen?.();
     }
 };
 
-// Double-cliquer sur la vidéo pour l'agrandir en plein écran
+function applyVirtualFullscreen() {
+    videoElement.classList.add('virtual-fullscreen');
+    closeFsBtn.style.display = "block";
+}
+
+function exitVirtualFullscreen() {
+    videoElement.classList.remove('virtual-fullscreen');
+    closeFsBtn.style.display = "none";
+}
+
+// Actions pour quitter/entrer
 videoElement.ondblclick = toggleFullScreen;
+closeFsBtn.onclick = exitVirtualFullscreen;
+
+// Gestionnaire d'échappement pour le plein écran natif standard
+document.onfullscreenchange = () => {
+    if (!document.fullscreenElement) {
+        exitVirtualFullscreen();
+    }
+};
 
 // Ajouter également un bouton d'agrandissement sous la vidéo s'il n'existe pas déjà
 let zoomBtn = document.getElementById('zoomBtn');
 if (!zoomBtn) {
     zoomBtn = document.createElement('button');
     zoomBtn.id = 'zoomBtn';
-    zoomBtn.innerText = "📺 Plein écran";
+    zoomBtn.innerText = "📺 Agrandir / Plein écran";
     zoomBtn.style.margin = "10px auto";
     zoomBtn.style.display = "block";
     zoomBtn.style.padding = "8px 16px";
@@ -64,8 +113,14 @@ if (!zoomBtn) {
     zoomBtn.style.border = "none";
     zoomBtn.style.borderRadius = "5px";
     zoomBtn.style.cursor = "pointer";
-    zoomBtn.onclick = toggleFullScreen;
-    // Insérer le bouton juste après la vidéo
+    zoomBtn.onclick = () => {
+        // Force directement le plein écran virtuel qui fonctionne partout, même sans permission
+        if (videoElement.classList.contains('virtual-fullscreen')) {
+            exitVirtualFullscreen();
+        } else {
+            applyVirtualFullscreen();
+        }
+    };
     videoElement.parentNode.insertBefore(zoomBtn, videoElement.nextSibling);
 }
 // ----------------------------------------
