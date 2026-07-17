@@ -44,7 +44,7 @@ jobs:
 
       - name: Inject Android Native Screen Share Bridge & Service
         run: |
-          # 1. Configuration de l'AndroidManifest (Permissions strictes et déclaration du service de premier plan)
+          # 1. Configuration de l'AndroidManifest (Permissions strictes de premier plan et de veille)
           node -e "
           const fs = require('fs');
           const file = 'android/app/src/main/AndroidManifest.xml';
@@ -52,7 +52,9 @@ jobs:
           
           const permissions = '\n' +
             '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />\n' +
-            '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION\" />\n';
+            '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION\" />\n' +
+            '    <uses-permission android:name=\"android.permission.WAKE_LOCK\" />\n' +
+            '    <uses-permission android:name=\"android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS\" />\n';
           
           content = content.replace(/(<manifest[^>]*>)/, '\$1' + permissions);
           
@@ -92,6 +94,7 @@ jobs:
                           .setContentTitle("Partage d'écran actif")
                           .setContentText("L'application capture l'écran en tâche de fond.")
                           .setSmallIcon(android.R.drawable.ic_media_play)
+                          .setOngoing(true) // Empêche de fermer la notification par glissement
                           .build();
                   
                   startForeground(1, notification);
@@ -118,7 +121,7 @@ jobs:
           }
           EOF
 
-          # 3. Configuration de MainActivity.java (Correction de onDestroy)
+          # 3. Configuration de MainActivity.java
           cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java
           package com.lorenzmini1.partager_son_cran;
 
@@ -287,8 +290,6 @@ jobs:
                   Intent serviceIntent = new Intent(this, ScreenCaptureService.class);
                   stopService(serviceIntent);
               }
-
-              // onDestroy() retiré car géré au niveau parent par Capacitor
           }
           EOF
 
