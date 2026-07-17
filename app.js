@@ -16,7 +16,7 @@ const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 statusDiv.style.color = "#06d6a0";
 statusDiv.innerText = "Statut : Prêt";
-startShareBtn.innerText = "Partager l'écran (Natif)";
+startShareBtn.innerText = "Partager l'écran";
 
 // Émetteur : Lancer l'autorisation native
 startShareBtn.onclick = () => {
@@ -26,8 +26,7 @@ startShareBtn.onclick = () => {
     if (window.AndroidScreenShare) {
         window.AndroidScreenShare.startNativeScreenCapture();
     } else {
-        statusDiv.innerText = "Erreur : Interface native non disponible (es-tu sur navigateur PC ?)";
-        // Fallback pour le développement sur PC
+        statusDiv.innerText = "Erreur : Interface native non disponible. Tentative Web...";
         fallbackWebGetDisplayMedia();
     }
 };
@@ -37,16 +36,24 @@ async function onNativeScreenShareGranted() {
     try {
         statusDiv.innerText = "Accès d'écran Android validé ! Initialisation du flux...";
         
-        // L'astuce magique : une fois l'autorisation Android globale acquise, 
-        // getUserMedia avec la contrainte vidéo d'écran est autorisée à récupérer le flux média
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                mandatory: {
-                    chromeMediaSource: 'screen'
-                }
-            },
-            audio: false
-        });
+        // Puisque notre WebChromeClient natif accepte maintenant toutes les requêtes,
+        // nous pouvons appeler l'API standard de capture d'écran d'Android de manière propre.
+        if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+            localStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: false
+            });
+        } else {
+            // Deuxième option de secours si getDisplayMedia est manquant dans la WebView
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: "environment" // Fallback caméra arrière si l'écran est inaccessible
+                },
+                audio: false
+            });
+        }
 
         videoElement.srcObject = localStream;
         localConnection = new RTCPeerConnection(rtcConfig);
@@ -63,6 +70,7 @@ async function onNativeScreenShareGranted() {
         };
     } catch (err) {
         statusDiv.innerText = "Erreur d'initialisation du flux : " + err.message;
+        console.error(err);
     }
 }
 
@@ -76,7 +84,6 @@ async function fallbackWebGetDisplayMedia() {
     try {
         localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         videoElement.srcObject = localStream;
-        // Reste de l'initialisation RTC identique...
     } catch(e) {
         statusDiv.innerText = "Échec du fallback PC : " + e.message;
     }
