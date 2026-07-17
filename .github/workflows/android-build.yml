@@ -94,7 +94,7 @@ jobs:
                           .setContentTitle("Partage d'écran actif")
                           .setContentText("L'application capture l'écran en tâche de fond.")
                           .setSmallIcon(android.R.drawable.ic_media_play)
-                          .setOngoing(true) // Empêche l'utilisateur de fermer la notification par glissement
+                          .setOngoing(true)
                           .build();
                   
                   startForeground(1, notification);
@@ -121,7 +121,7 @@ jobs:
           }
           EOF
 
-          # 3. Configuration de MainActivity.java (Maintien actif de la WebView en arrière-plan)
+          # 3. Configuration de MainActivity.java (Correction des visibilités public)
           cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java
           package com.lorenzmini1.partager_son_cran;
 
@@ -162,13 +162,11 @@ jobs:
                   super.onCreate(savedInstanceState);
                   projectionManager = (Context.MEDIA_PROJECTION_SERVICE != null) ? (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE) : null;
                   
-                  // Optimisation de la WebView pour TOUJOURS tourner en arrière-plan
                   WebView webView = this.getBridge().getWebView();
                   webView.getSettings().setJavaScriptEnabled(true);
                   webView.getSettings().setDomStorageEnabled(true);
                   webView.addJavascriptInterface(new WebAppInterface(), "AndroidScreenShare");
                   
-                  // Empêche la mise en pause de l'exécution JS par le système
                   webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
                   
                   webView.setWebChromeClient(new WebChromeClient() {
@@ -179,16 +177,14 @@ jobs:
                   });
               }
 
-              // On surcharge les événements de pause de l'activité pour interdire à la WebView de se figer
+              // CORRECTION : Changement de 'protected' à 'public' pour correspondre à BridgeActivity
               @Override
-              protected void onPause() {
-                  // NE PAS appeler super.onPause() de BridgeActivity / WebView qui fige les WebSockets/RTC.
-                  // On appelle uniquement le cycle de vie Android de base
+              public void onPause() {
                   super.onPause();
               }
 
               @Override
-              protected void onResume() {
+              public void onResume() {
                   super.onResume();
               }
 
@@ -210,13 +206,11 @@ jobs:
               protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                   super.onActivityResult(requestCode, resultCode, data);
                   if (requestCode == SCREEN_CAPTURE_REQUEST_CODE && resultCode == RESULT_OK && data != null) {
-                      // Démarrage du service de premier plan persistant pour l'arrière-plan
                       Intent serviceIntent = new Intent(this, ScreenCaptureService.class);
                       startForegroundService(serviceIntent);
 
                       mediaProjection = projectionManager.getMediaProjection(resultCode, data);
                       
-                      // Enregistrement d'un callback pour écouter les arrêts système du MediaProjection
                       mediaProjection.registerCallback(new MediaProjection.Callback() {
                           @Override
                           public void onStop() {
@@ -257,7 +251,7 @@ jobs:
                   public void run() {
                       if (!isCapturing) return;
                       captureFrameAndSend();
-                      handler.postDelayed(this, 200); // 5 images par seconde (très stable pour la batterie)
+                      handler.postDelayed(this, 200);
                   }
               };
 
@@ -280,7 +274,7 @@ jobs:
                       bitmap.copyPixelsFromBuffer(buffer);
 
                       ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                      bitmap.compress(Bitmap.CompressFormat.JPEG, 40, baos); // Qualité réduite à 40% pour stabiliser la RAM
+                      bitmap.compress(Bitmap.CompressFormat.JPEG, 40, baos);
                       byte[] byteArray = baos.toByteArray();
                       String base64Image = Base64.encodeToString(byteArray, Base64.NO_WRAP);
 
