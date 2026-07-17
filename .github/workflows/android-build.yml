@@ -44,7 +44,7 @@ jobs:
 
       - name: Inject Android Native Screen Share Bridge & Service
         run: |
-          # 1. Configuration de l'AndroidManifest (Permissions strictes de premier plan et de veille)
+          # 1. Configuration de l'AndroidManifest (Permissions)
           node -e "
           const fs = require('fs');
           const file = 'android/app/src/main/AndroidManifest.xml';
@@ -69,7 +69,7 @@ jobs:
           fs.writeFileSync(file, content, 'utf8');
           "
           
-          # 2. Création du service de premier plan obligatoire (ScreenCaptureService.java)
+          # 2. Création du service de premier plan avec action d'arrêt (ScreenCaptureService.java)
           mkdir -p android/app/src/main/java/com/lorenzmini1/partager_son_cran/
           cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/ScreenCaptureService.java
           package com.lorenzmini1.partager_son_cran;
@@ -77,6 +77,7 @@ jobs:
           import android.app.Notification;
           import android.app.NotificationChannel;
           import android.app.NotificationManager;
+          import android.app.PendingIntent;
           import android.app.Service;
           import android.content.Intent;
           import android.os.Build;
@@ -85,44 +86,56 @@ jobs:
 
           public class ScreenCaptureService extends Service {
               private static final String CHANNEL_ID = "ScreenCaptureChannel";
+              public static final String ACTION_STOP = "STOP_SHARE_ACTION";
 
               @Override
-              public void onCreate() {
-                  super.onCreate();
+              public int onStartCommand(Intent intent, int flags, int startId) {
+                  if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+                      // Événement d'arrêt déclenché depuis la notification
+                      MainActivity.triggerStopFromNotification();
+                      stopSelf();
+                      return START_NOT_STICKY;
+                  }
+
                   createNotificationChannel();
+
+                  Intent stopIntent = new Intent(this, ScreenCaptureService.class);
+                  stopIntent.setAction(ACTION_STOP);
+                  
+                  int pendingFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? 
+                          PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE : PendingIntent.FLAG_UPDATE_CURRENT;
+                  
+                  PendingIntent stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, pendingFlags);
+
                   Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                          .setContentTitle("Partage d'écran actif")
-                          .setContentText("L'application capture l'écran en tâche de fond.")
+                          .setContentTitle("🖥️ Partage d'écran actif")
+                          .setContentText("L'application diffuse votre écran en arrière-plan.")
                           .setSmallIcon(android.R.drawable.ic_media_play)
                           .setOngoing(true)
+                          .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Arrêter le partage", stopPendingIntent)
                           .build();
                   
                   startForeground(1, notification);
+                  return START_STICKY;
               }
 
               private void createNotificationChannel() {
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       NotificationChannel channel = new NotificationChannel(
-                              CHANNEL_ID,
-                              "Service de Capture",
-                              NotificationManager.IMPORTANCE_LOW
+                              CHANNEL_ID, "Service de Capture", NotificationManager.IMPORTANCE_LOW
                       );
                       NotificationManager manager = getSystemService(NotificationManager.class);
-                      if (manager != null) {
-                          manager.createNotificationChannel(channel);
-                      }
+                      if (manager != null) manager.createNotificationChannel(channel);
                   }
               }
 
               @Override
-              public IBinder onBind(Intent intent) {
-                  return null;
-              }
+              public IBinder onBind(Intent intent) { return null; }
           }
           EOF
 
-          # 3. Configuration de MainActivity.java (Correction des visibilités public)
-          cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java
+          # 3. Configuration de MainActivity.java (Liaison Notification -> WebView)
+          cat << 'EOF' > android/app/src/main/java/com/lorenzmini1.partager_son_cran/MainActivity.java
           package com.lorenzmini1.partager_son_cran;
 
           import android.content.Context;
@@ -156,17 +169,18 @@ jobs:
               private ImageReader imageReader;
               private Handler handler = new Handler(Looper.getMainLooper());
               private boolean isCapturing = false;
+              private static MainActivity instance;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+                  instance = this;
                   projectionManager = (Context.MEDIA_PROJECTION_SERVICE != null) ? (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE) : null;
                   
                   WebView webView = this.getBridge().getWebView();
                   webView.getSettings().setJavaScriptEnabled(true);
                   webView.getSettings().setDomStorageEnabled(true);
                   webView.addJavascriptInterface(new WebAppInterface(), "AndroidScreenShare");
-                  
                   webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
                   
                   webView.setWebChromeClient(new WebChromeClient() {
@@ -177,16 +191,23 @@ jobs:
                   });
               }
 
-              // CORRECTION : Changement de 'protected' à 'public' pour correspondre à BridgeActivity
-              @Override
-              public void onPause() {
-                  super.onPause();
+              public static void triggerStopFromNotification() {
+                  if (instance != null) {
+                      instance.runOnUiThread(() -> instance.stopCaptureFromNotification());
+                  }
+              }
+
+              private void stopCaptureFromNotification() {
+                  stopCapture();
+                  WebView webView = this.getBridge().getWebView();
+                  webView.post(() -> webView.evaluateJavascript("javascript:window.onNativeStopCommand();", null));
               }
 
               @Override
-              public void onResume() {
-                  super.onResume();
-              }
+              public void onPause() { super.onPause(); }
+
+              @Override
+              public void onResume() { super.onResume(); }
 
               public class WebAppInterface {
                   @JavascriptInterface
@@ -210,12 +231,9 @@ jobs:
                       startForegroundService(serviceIntent);
 
                       mediaProjection = projectionManager.getMediaProjection(resultCode, data);
-                      
                       mediaProjection.registerCallback(new MediaProjection.Callback() {
                           @Override
-                          public void onStop() {
-                              stopCapture();
-                          }
+                          public void onStop() { stopCapture(); }
                       }, handler);
 
                       startCapture();
@@ -227,21 +245,13 @@ jobs:
 
               private void startCapture() {
                   if (mediaProjection == null) return;
-                  
                   DisplayMetrics metrics = new DisplayMetrics();
                   getWindowManager().getDefaultDisplay().getMetrics(metrics);
                   int width = 480;
                   int height = (int) (width * ((float) metrics.heightPixels / metrics.widthPixels));
-                  int density = metrics.densityDpi;
-
                   imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
-                  virtualDisplay = mediaProjection.createVirtualDisplay(
-                          "ScreenCapture",
-                          width, height, density,
-                          DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                          imageReader.getSurface(), null, null
-                  );
-
+                  virtualDisplay = mediaProjection.createVirtualDisplay("ScreenCapture", width, height, metrics.densityDpi,
+                          DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader.getSurface(), null, null);
                   isCapturing = true;
                   handler.post(captureRunnable);
               }
@@ -259,50 +269,31 @@ jobs:
                   if (imageReader == null) return;
                   try (Image image = imageReader.acquireLatestImage()) {
                       if (image == null) return;
-                      
                       Image.Plane[] planes = image.getPlanes();
                       ByteBuffer buffer = planes[0].getBuffer();
                       int pixelStride = planes[0].getPixelStride();
                       int rowStride = planes[0].getRowStride();
                       int rowPadding = rowStride - pixelStride * image.getWidth();
 
-                      Bitmap bitmap = Bitmap.createBitmap(
-                              image.getWidth() + rowPadding / pixelStride,
-                              image.getHeight(),
-                              Bitmap.Config.ARGB_8888
-                      );
+                      Bitmap bitmap = Bitmap.createBitmap(image.getWidth() + rowPadding / pixelStride, image.getHeight(), Bitmap.Config.ARGB_8888);
                       bitmap.copyPixelsFromBuffer(buffer);
 
                       ByteArrayOutputStream baos = new ByteArrayOutputStream();
                       bitmap.compress(Bitmap.CompressFormat.JPEG, 40, baos);
-                      byte[] byteArray = baos.toByteArray();
-                      String base64Image = Base64.encodeToString(byteArray, Base64.NO_WRAP);
+                      String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
 
                       WebView webView = this.getBridge().getWebView();
                       webView.post(() -> webView.evaluateJavascript("javascript:onNativeFrame('" + base64Image + "');", null));
-                      
                       bitmap.recycle();
-                  } catch (Exception e) {
-                      e.printStackTrace();
-                  }
+                  } catch (Exception e) { e.printStackTrace(); }
               }
 
               private void stopCapture() {
                   isCapturing = false;
-                  if (virtualDisplay != null) {
-                      virtualDisplay.release();
-                      virtualDisplay = null;
-                  }
-                  if (imageReader != null) {
-                      imageReader.close();
-                      imageReader = null;
-                  }
-                  if (mediaProjection != null) {
-                      mediaProjection.stop();
-                      mediaProjection = null;
-                  }
-                  Intent serviceIntent = new Intent(this, ScreenCaptureService.class);
-                  stopService(serviceIntent);
+                  if (virtualDisplay != null) { virtualDisplay.release(); virtualDisplay = null; }
+                  if (imageReader != null) { imageReader.close(); imageReader = null; }
+                  if (mediaProjection != null) { mediaProjection.stop(); mediaProjection = null; }
+                  stopService(new Intent(this, ScreenCaptureService.class));
               }
           }
           EOF
