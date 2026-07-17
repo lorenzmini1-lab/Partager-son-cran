@@ -60,7 +60,7 @@ jobs:
           
           const serviceDefinition = '\n' +
             '        <service\n' +
-            '            android:name=\"com.lorenzmini1.partager_son_ecran.ScreenCaptureService\"\n' +
+            '            android:name=\"com.lorenzmini1.partager_son_cran.ScreenCaptureService\"\n' +
             '            android:foregroundServiceType=\"mediaProjection\"\n' +
             '            android:enabled=\"true\"\n' +
             '            android:exported=\"false\" />\n';
@@ -91,7 +91,6 @@ jobs:
               @Override
               public int onStartCommand(Intent intent, int flags, int startId) {
                   if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-                      // Événement d'arrêt déclenché depuis la notification
                       MainActivity.triggerStopFromNotification();
                       stopSelf();
                       return START_NOT_STICKY;
@@ -134,7 +133,7 @@ jobs:
           }
           EOF
 
-          # 3. Configuration de MainActivity.java (Correction du chemin avec le / à la place du .)
+          # 3. Configuration de MainActivity.java (Correction des visibilités de onPause et onResume)
           cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java
           package com.lorenzmini1.partager_son_cran;
 
@@ -203,6 +202,7 @@ jobs:
                   webView.post(() -> webView.evaluateJavascript("javascript:window.onNativeStopCommand();", null));
               }
 
+              // CORRECTION EXPLICITE : public requis par l'activité parente de Capacitor
               @Override
               public void onPause() { super.onPause(); }
 
