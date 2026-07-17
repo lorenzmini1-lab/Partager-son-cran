@@ -18,39 +18,22 @@ statusDiv.style.color = "#06d6a0";
 statusDiv.innerText = "Statut : Prêt";
 startShareBtn.innerText = "Partager l'écran";
 
-// Émetteur : Lancer l'autorisation native
-startShareBtn.onclick = () => {
-    statusDiv.innerText = "Demande d'autorisation de l'écran via Android...";
-    
-    // On vérifie si l'application tourne dans l'environnement Android avec notre pont natif
-    if (window.AndroidScreenShare) {
-        window.AndroidScreenShare.startNativeScreenCapture();
-    } else {
-        statusDiv.innerText = "Erreur : Interface native non disponible. Tentative Web...";
-        fallbackWebGetDisplayMedia();
-    }
-};
-
-// Callback appelé par Android quand l'utilisateur accepte la capture d'écran
-async function onNativeScreenShareGranted() {
+// Rôle Émetteur
+startShareBtn.onclick = async () => {
     try {
-        statusDiv.innerText = "Accès d'écran Android validé ! Initialisation du flux...";
+        statusDiv.innerText = "Demande de capture d'écran...";
         
-        // Puisque notre WebChromeClient natif accepte maintenant toutes les requêtes,
-        // nous pouvons appeler l'API standard de capture d'écran d'Android de manière propre.
+        // Appel direct à l'API standard. Le code Java intercepte cet appel,
+        // lance le Service de Premier Plan obligatoire, et valide l'accès.
         if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
             localStream = await navigator.mediaDevices.getDisplayMedia({
                 video: true,
                 audio: false
             });
         } else {
-            // Deuxième option de secours si getDisplayMedia est manquant dans la WebView
+            // Secours si getDisplayMedia n'existe pas
             localStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: "environment" // Fallback caméra arrière si l'écran est inaccessible
-                },
+                video: { facingMode: "environment" },
                 audio: false
             });
         }
@@ -68,32 +51,13 @@ async function onNativeScreenShareGranted() {
                 connectBtn.disabled = false;
             }
         };
-    } catch (err) {
-        statusDiv.innerText = "Erreur d'initialisation du flux : " + err.message;
+    } catch (err) { 
+        statusDiv.innerText = "Erreur d'initialisation du flux : " + err.message; 
         console.error(err);
     }
-}
+};
 
-// En cas de refus de la pop-up Android standard
-function onNativeScreenShareDenied() {
-    statusDiv.innerText = "Le partage d'écran a été refusé sur le téléphone.";
-}
-
-// Fallback sur PC
-async function fallbackWebGetDisplayMedia() {
-    try {
-        localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-        videoElement.srcObject = localStream;
-    } catch(e) {
-        statusDiv.innerText = "Échec du fallback PC : " + e.message;
-    }
-}
-
-// Exposer les fonctions globales pour l'interface native Android
-window.onNativeScreenShareGranted = onNativeScreenShareGranted;
-window.onNativeScreenShareDenied = onNativeScreenShareDenied;
-
-// Finaliser la connexion côté Émetteur
+// Finaliser connexion
 connectBtn.onclick = async () => {
     try {
         const answer = JSON.parse(atob(answerIn.value));
