@@ -23,26 +23,44 @@ startShareBtn.onclick = async () => {
     try {
         statusDiv.innerText = "Demande de capture d'écran...";
         
-        // Appel direct à l'API standard. Le code Java intercepte cet appel,
-        // lance le Service de Premier Plan obligatoire, et valide l'accès.
-        if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-            localStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
-                audio: false
+        // Si nous sommes sur Android dans Capacitor avec le plugin installé
+        if (window.cordova && window.cordova.plugins && window.cordova.plugins.screenshare) {
+            statusDiv.innerText = "Démarrage de la capture d'écran native...";
+            window.cordova.plugins.screenshare.startShare(async (stream) => {
+                localStream = stream;
+                initRTCPeerConnection();
+            }, (err) => {
+                statusDiv.innerText = "Erreur native : " + err;
             });
         } else {
-            // Secours si getDisplayMedia n'existe pas
-            localStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" },
-                audio: false
-            });
+            // Sur navigateur PC ou en fallback de sécurité[span_2](start_span)[span_2](end_span)
+            if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+                localStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: false
+                });
+                initRTCPeerConnection();
+            } else {
+                // Fallback caméra arrière si tout le reste échoue[span_3](start_span)[span_3](end_span)
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" },
+                    audio: false
+                });
+                initRTCPeerConnection();
+            }
         }
+    } catch (err) { 
+        statusDiv.innerText = "Erreur d'initialisation : " + err.message; 
+        console.error(err);
+    }
+};
 
-        videoElement.srcObject = localStream;
-        localConnection = new RTCPeerConnection(rtcConfig);
-        localStream.getTracks().forEach(track => localConnection.addTrack(track, localStream));
-        
-        const offer = await localConnection.createOffer();
+function initRTCPeerConnection() {
+    videoElement.srcObject = localStream;
+    localConnection = new RTCPeerConnection(rtcConfig);
+    localStream.getTracks().forEach(track => localConnection.addTrack(track, localStream));
+    
+    localConnection.createOffer().then(async (offer) => {
         await localConnection.setLocalDescription(offer);
         localConnection.onicecandidate = (e) => {
             if (!e.candidate) {
@@ -51,11 +69,8 @@ startShareBtn.onclick = async () => {
                 connectBtn.disabled = false;
             }
         };
-    } catch (err) { 
-        statusDiv.innerText = "Erreur d'initialisation du flux : " + err.message; 
-        console.error(err);
-    }
-};
+    });
+}
 
 // Finaliser connexion
 connectBtn.onclick = async () => {
