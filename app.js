@@ -24,6 +24,52 @@ statusDiv.style.color = "#06d6a0";
 statusDiv.innerText = "Statut : Prêt";
 startShareBtn.innerText = "Partager l'écran";
 
+// --- AJOUT : OPTION D'AGRANDISSEMENT ---
+// Ajoute des styles de base à l'élément vidéo pour qu'il soit cliquable et réactif
+videoElement.style.cursor = "pointer";
+videoElement.style.transition = "transform 0.3s ease";
+videoElement.title = "Double-clique pour passer en plein écran";
+
+// Fonction pour basculer en plein écran
+const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+        if (videoElement.requestFullscreen) {
+            videoElement.requestFullscreen();
+        } else if (videoElement.webkitRequestFullscreen) { /* Safari / iOS */
+            videoElement.webkitRequestFullscreen();
+        } else if (videoElement.msRequestFullscreen) { /* IE11 */
+            videoElement.msRequestFullscreen();
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+};
+
+// Double-cliquer sur la vidéo pour l'agrandir en plein écran
+videoElement.ondblclick = toggleFullScreen;
+
+// Ajouter également un bouton d'agrandissement sous la vidéo s'il n'existe pas déjà
+let zoomBtn = document.getElementById('zoomBtn');
+if (!zoomBtn) {
+    zoomBtn = document.createElement('button');
+    zoomBtn.id = 'zoomBtn';
+    zoomBtn.innerText = "📺 Plein écran";
+    zoomBtn.style.margin = "10px auto";
+    zoomBtn.style.display = "block";
+    zoomBtn.style.padding = "8px 16px";
+    zoomBtn.style.backgroundColor = "#118ab2";
+    zoomBtn.style.color = "white";
+    zoomBtn.style.border = "none";
+    zoomBtn.style.borderRadius = "5px";
+    zoomBtn.style.cursor = "pointer";
+    zoomBtn.onclick = toggleFullScreen;
+    // Insérer le bouton juste après la vidéo
+    videoElement.parentNode.insertBefore(zoomBtn, videoElement.nextSibling);
+}
+// ----------------------------------------
+
 // Rôle Émetteur
 startShareBtn.onclick = async () => {
     statusDiv.innerText = "Demande d'autorisation de l'écran via Android...";
@@ -57,7 +103,6 @@ async function onNativeScreenShareGranted() {
         statusDiv.innerText = "Capture active. Génération du flux vidéo...";
         
         // On capture le flux vidéo directement depuis le canvas de dessin à 8 FPS !
-        // C'est entièrement compatible avec tous les téléphones et toutes les WebViews.
         localStream = canvas.captureStream(8); 
 
         videoElement.srcObject = localStream;
