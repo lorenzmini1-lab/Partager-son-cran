@@ -29,6 +29,7 @@ jobs:
         run: |
           npm install
           npm install @capacitor/android
+          npm install @capacitor-community/screen-recorder
           chmod -R +x node_modules/.bin || true
 
       - name: Prepare Web Directory
