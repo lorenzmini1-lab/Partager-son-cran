@@ -16,21 +16,37 @@ const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 statusDiv.style.color = "#06d6a0";
 statusDiv.innerText = "Statut : Prêt";
-startShareBtn.innerText = "Partager l'écran";
+startShareBtn.innerText = "Partager l'écran (Natif)";
 
-// Rôle Émetteur
-startShareBtn.onclick = async () => {
+// Émetteur : Lancer l'autorisation native
+startShareBtn.onclick = () => {
+    statusDiv.innerText = "Demande d'autorisation de l'écran via Android...";
+    
+    // On vérifie si l'application tourne dans l'environnement Android avec notre pont natif
+    if (window.AndroidScreenShare) {
+        window.AndroidScreenShare.startNativeScreenCapture();
+    } else {
+        statusDiv.innerText = "Erreur : Interface native non disponible (es-tu sur navigateur PC ?)";
+        // Fallback pour le développement sur PC
+        fallbackWebGetDisplayMedia();
+    }
+};
+
+// Callback appelé par Android quand l'utilisateur accepte la capture d'écran
+async function onNativeScreenShareGranted() {
     try {
-        statusDiv.innerText = "Demande d'autorisation de l'écran...";
+        statusDiv.innerText = "Accès d'écran Android validé ! Initialisation du flux...";
         
-        // On tente d'abord d'obtenir l'écran (qui va maintenant fonctionner grâce à notre modification native)
-        try {
-            localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        } catch (e) {
-            console.log("getDisplayMedia échoué ou non supporté, tentative avec getUserMedia :", e);
-            // Fallback sur la caméra si le partage d'écran est annulé
-            localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
-        }
+        // L'astuce magique : une fois l'autorisation Android globale acquise, 
+        // getUserMedia avec la contrainte vidéo d'écran est autorisée à récupérer le flux média
+        localStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                mandatory: {
+                    chromeMediaSource: 'screen'
+                }
+            },
+            audio: false
+        });
 
         videoElement.srcObject = localStream;
         localConnection = new RTCPeerConnection(rtcConfig);
@@ -41,17 +57,36 @@ startShareBtn.onclick = async () => {
         localConnection.onicecandidate = (e) => {
             if (!e.candidate) {
                 offerOut.value = btoa(JSON.stringify(localConnection.localDescription));
-                statusDiv.innerText = "Invitation prête ! Envoie-la au récepteur.";
+                statusDiv.innerText = "Invitation prête ! Transmets-la au récepteur.";
                 connectBtn.disabled = false;
             }
         };
-    } catch (err) { 
-        statusDiv.innerText = "Erreur de capture : " + err.message; 
-        console.error(err);
+    } catch (err) {
+        statusDiv.innerText = "Erreur d'initialisation du flux : " + err.message;
     }
-};
+}
 
-// Finaliser connexion
+// En cas de refus de la pop-up Android standard
+function onNativeScreenShareDenied() {
+    statusDiv.innerText = "Le partage d'écran a été refusé sur le téléphone.";
+}
+
+// Fallback sur PC
+async function fallbackWebGetDisplayMedia() {
+    try {
+        localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        videoElement.srcObject = localStream;
+        // Reste de l'initialisation RTC identique...
+    } catch(e) {
+        statusDiv.innerText = "Échec du fallback PC : " + e.message;
+    }
+}
+
+// Exposer les fonctions globales pour l'interface native Android
+window.onNativeScreenShareGranted = onNativeScreenShareGranted;
+window.onNativeScreenShareDenied = onNativeScreenShareDenied;
+
+// Finaliser la connexion côté Émetteur
 connectBtn.onclick = async () => {
     try {
         const answer = JSON.parse(atob(answerIn.value));
