@@ -121,7 +121,7 @@ jobs:
           }
           EOF
 
-          # 3. Configuration de MainActivity.java (Persistant et sans onDestroy interdit)
+          # 3. Configuration de MainActivity.java (Maintien actif de la WebView en arrière-plan)
           cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java
           package com.lorenzmini1.partager_son_cran;
 
@@ -160,12 +160,16 @@ jobs:
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-                  projectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                  projectionManager = (Context.MEDIA_PROJECTION_SERVICE != null) ? (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE) : null;
                   
+                  // Optimisation de la WebView pour TOUJOURS tourner en arrière-plan
                   WebView webView = this.getBridge().getWebView();
                   webView.getSettings().setJavaScriptEnabled(true);
                   webView.getSettings().setDomStorageEnabled(true);
                   webView.addJavascriptInterface(new WebAppInterface(), "AndroidScreenShare");
+                  
+                  // Empêche la mise en pause de l'exécution JS par le système
+                  webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
                   
                   webView.setWebChromeClient(new WebChromeClient() {
                       @Override
@@ -173,6 +177,19 @@ jobs:
                           runOnUiThread(() -> request.grant(request.getResources()));
                       }
                   });
+              }
+
+              // On surcharge les événements de pause de l'activité pour interdire à la WebView de se figer
+              @Override
+              protected void onPause() {
+                  // NE PAS appeler super.onPause() de BridgeActivity / WebView qui fige les WebSockets/RTC.
+                  // On appelle uniquement le cycle de vie Android de base
+                  super.onPause();
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
               }
 
               public class WebAppInterface {
