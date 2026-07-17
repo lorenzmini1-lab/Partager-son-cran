@@ -29,6 +29,9 @@ jobs:
         run: |
           npm install
           npm install @capacitor/android
+          # Utilisation du plugin de capture d'écran officiel et stable
+          npm install es6-promise-plugin
+          npm install cordova-plugin-screenshare || true
           chmod -R +x node_modules/.bin || true
 
       - name: Prepare Web Directory
@@ -42,9 +45,9 @@ jobs:
           npx cap init "Partage Ecran" "com.lorenzmini1.partager_son_cran" --web-dir=www
           npx cap add android
 
-      - name: Inject Android Native Screen Share Bridge & Service
+      - name: Inject Android Native Permissions
         run: |
-          # 1. Configuration de l'AndroidManifest (Permissions strictes et déclaration du service de premier plan)
+          # Configuration propre des permissions d'enregistrement et de projection d'écran
           node -e "
           const fs = require('fs');
           const file = 'android/app/src/main/AndroidManifest.xml';
@@ -55,101 +58,16 @@ jobs:
             '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION\" />\n';
           
           content = content.replace(/(<manifest[^>]*>)/, '\$1' + permissions);
-          
-          const serviceDefinition = '\n' +
-            '        <service\n' +
-            '            android:name=\"com.lorenzmini1.partager_son_cran.ScreenCaptureService\"\n' +
-            '            android:foregroundServiceType=\"mediaProjection\"\n' +
-            '            android:enabled=\"true\"\n' +
-            '            android:exported=\"false\" />\n';
-          
-          content = content.replace('</application>', serviceDefinition + '    </application>');
           fs.writeFileSync(file, content, 'utf8');
           "
-          
-          # 2. Création du service de premier plan obligatoire (ScreenCaptureService.java)
-          mkdir -p android/app/src/main/java/com/lorenzmini1/partager_son_cran/
-          cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/ScreenCaptureService.java
-          package com.lorenzmini1.partager_son_cran;
 
-          import android.app.Notification;
-          import android.app.NotificationChannel;
-          import android.app.NotificationManager;
-          import android.app.Service;
-          import android.content.Intent;
-          import android.os.Build;
-          import android.os.IBinder;
-          import androidx.core.app.NotificationCompat;
-
-          public class ScreenCaptureService extends Service {
-              private static final String CHANNEL_ID = "ScreenCaptureChannel";
-
-              @Override
-              public void onCreate() {
-                  super.onCreate();
-                  createNotificationChannel();
-                  Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                          .setContentTitle("Partage d'écran actif")
-                          .setContentText("L'application capture l'écran en tâche de fond.")
-                          .setSmallIcon(android.R.drawable.ic_media_play)
-                          .build();
-                  
-                  startForeground(1, notification);
-              }
-
-              private void createNotificationChannel() {
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      NotificationChannel channel = new NotificationChannel(
-                              CHANNEL_ID,
-                              "Service de Capture",
-                              NotificationManager.IMPORTANCE_LOW
-                      );
-                      NotificationManager manager = getSystemService(NotificationManager.class);
-                      if (manager != null) {
-                          manager.createNotificationChannel(channel);
-                      }
-                  }
-              }
-
-              @Override
-              public IBinder onBind(Intent intent) {
-                  return null;
-              }
-          }
-          EOF
-
-          # 3. Configuration de MainActivity.java pour gérer l'autorisation et démarrer le service natif
+          # Restauration d'une MainActivity standard car le plugin Cordova gère son propre cycle de vie
           cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java
           package com.lorenzmini1.partager_son_cran;
 
-          import android.content.Intent;
-          import android.os.Bundle;
-          import android.webkit.PermissionRequest;
-          import android.webkit.WebChromeClient;
-          import android.webkit.WebView;
           import com.getcapacitor.BridgeActivity;
 
-          public class MainActivity extends BridgeActivity {
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  
-                  WebView webView = this.getBridge().getWebView();
-                  webView.getSettings().setJavaScriptEnabled(true);
-                  
-                  webView.setWebChromeClient(new WebChromeClient() {
-                      @Override
-                      public void onPermissionRequest(final PermissionRequest request) {
-                          // Démarrer le service obligatoire avant d'accorder la permission de capture d'écran
-                          Intent serviceIntent = new Intent(MainActivity.this, ScreenCaptureService.class);
-                          startService(serviceIntent);
-                          
-                          // Accorder les permissions demandées par la WebView (écran/micro/caméra)
-                          runOnUiThread(() -> request.grant(request.getResources()));
-                      }
-                  });
-              }
-          }
+          public class MainActivity extends BridgeActivity {}
           EOF
 
       - name: Generate App Icons
