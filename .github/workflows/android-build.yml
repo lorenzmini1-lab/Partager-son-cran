@@ -42,58 +42,78 @@ jobs:
           npx cap init "Partage Ecran" "com.lorenzmini1.partager_son_cran" --web-dir=www
           npx cap add android
 
-      - name: Inject Android Permissions, Services & WebChromeClient
+      - name: Inject Android Native Screen Share Bridge
         run: |
           node -e "
           const fs = require('fs');
           
-          // 1. Injection des permissions et services dans AndroidManifest.xml
+          // 1. Mise à jour d'AndroidManifest.xml (Permissions & Foreground Service requis pour la capture d'écran sur Android 10+)
           const manifestFile = 'android/app/src/main/AndroidManifest.xml';
           let manifestContent = fs.readFileSync(manifestFile, 'utf8');
           
           const permissions = '\n' +
-            '    <uses-permission android:name=\"android.permission.CAMERA\" />\n' +
-            '    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />\n' +
-            '    <uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />\n' +
             '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />\n' +
             '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION\" />\n';
           
           manifestContent = manifestContent.replace(/(<manifest[^>]*>)/, '\$1' + permissions);
-          
-          const serviceDefinition = '\n' +
-            '        <service\n' +
-            '            android:name=\"com.ionicframework.capacitor.CordovaInterfaceService\"\n' +
-            '            android:enabled=\"true\"\n' +
-            '            android:exported=\"false\" />\n';
-          
-          manifestContent = manifestContent.replace('</application>', serviceDefinition + '    </application>');
           fs.writeFileSync(manifestFile, manifestContent, 'utf8');
           
-          // 2. Configuration de MainActivity.java pour autoriser getDisplayMedia dans la WebView
+          // 2. Remplacement complet de MainActivity.java pour injecter l'API de capture d'écran Android native
           const activityFile = 'android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java';
           if (fs.existsSync(activityFile)) {
-              let activityContent = fs.readFileSync(activityFile, 'utf8');
-              
-              // On importe le WebChromeClient et PermissionRequest pour valider les requêtes d'écran
-              const imports = '\nimport android.webkit.WebChromeClient;\nimport android.webkit.PermissionRequest;\nimport android.webkit.WebView;\nimport com.getcapacitor.BridgeActivity;\n';
-              activityContent = activityContent.replace('import com.getcapacitor.BridgeActivity;', imports);
-              
-              // On configure la WebView pour accepter automatiquement les demandes de capture d'écran
-              const customBridge = '\n' +
-                '  @Override\n' +
-                '  public void onStart() {\n' +
-                '    super.onStart();\n' +
-                '    WebView webView = this.getBridge().getWebView();\n' +
-                '    webView.setWebChromeClient(new WebChromeClient() {\n' +
-                '      @Override\n' +
-                '      public void onPermissionRequest(final PermissionRequest request) {\n' +
-                '        request.grant(request.getResources());\n' +
-                '      }\n' +
-                '    });\n' +
-                '  }\n';
-              
-              activityContent = activityContent.replace('public class MainActivity extends BridgeActivity {}', 'public class MainActivity extends BridgeActivity {' + customBridge + '}');
-              fs.writeFileSync(activityFile, activityContent, 'utf8');
+              const nativeBridgeCode = \`package com.lorenzmini1.partager_son_cran;
+
+import android.content.Context;
+import android.content.Intent;
+import android.media.projection.MediaProjectionManager;
+import android.os.Bundle;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {
+    private static final int SCREEN_RECORD_REQUEST_CODE = 1000;
+    private MediaProjectionManager projectionManager;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        
+        // Initialiser le gestionnaire de projection
+        projectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+        
+        // Injecter l'interface JavaScript pour communiquer avec la page Web
+        WebView webView = this.getBridge().getWebView();
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.addJavascriptInterface(new WebAppInterface(), \"AndroidScreenShare\");
+    }
+
+    public class WebAppInterface {
+        @JavascriptInterface
+        public void startNativeScreenCapture() {
+            if (projectionManager != null) {
+                Intent captureIntent = projectionManager.createScreenCaptureIntent();
+                startActivityForResult(captureIntent, SCREEN_RECORD_REQUEST_CODE);
+            }
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == SCREEN_RECORD_REQUEST_CODE) {
+            if (resultCode == RESULT_OK && data != null) {
+                // Notifier la WebView que l'utilisateur a accepté le partage d'écran natif
+                WebView webView = this.getBridge().getWebView();
+                webView.post(() -> webView.evaluateJavascript(\"javascript:onNativeScreenShareGranted();\", null));
+            } else {
+                WebView webView = this.getBridge().getWebView();
+                webView.post(() -> webView.evaluateJavascript(\"javascript:onNativeScreenShareDenied();\", null));
+            }
+        }
+    }
+}\`;
+              fs.writeFileSync(activityFile, nativeBridgeCode, 'utf8');
           }
           "
 
