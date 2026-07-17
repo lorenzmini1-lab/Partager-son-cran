@@ -1,6 +1,7 @@
 let localConnection;
 let remoteConnection;
 let localStream;
+let wakeLock = null;
 
 const startShareBtn = document.getElementById('startShareBtn');
 const offerOut = document.getElementById('offerOut');
@@ -24,8 +25,7 @@ statusDiv.style.color = "#06d6a0";
 statusDiv.innerText = "Statut : Prêt";
 startShareBtn.innerText = "Partager l'écran";
 
-// --- AJOUT : STYLE POUR LE PLEIN ÉCRAN VIRTUEL ---
-// On injecte un petit style CSS pour notre mode "Plein écran alternatif" (infaillible sur WebView)
+// --- STYLE POUR LE PLEIN ÉCRAN VIRTUEL ---
 const style = document.createElement('style');
 style.innerHTML = `
   .virtual-fullscreen {
@@ -54,7 +54,6 @@ style.innerHTML = `
 `;
 document.head.appendChild(style);
 
-// Création d'un bouton pour quitter le plein écran virtuel
 const closeFsBtn = document.createElement('button');
 closeFsBtn.innerText = "Quitter le plein écran";
 closeFsBtn.className = "close-fullscreen-btn";
@@ -64,13 +63,10 @@ document.body.appendChild(closeFsBtn);
 videoElement.style.cursor = "pointer";
 videoElement.title = "Double-clique pour agrandir";
 
-// Fonction hybride : Plein écran natif OU virtuel si le natif est bloqué
 const toggleFullScreen = () => {
-    // 1. On tente d'abord la méthode classique (si le navigateur/WebView l'autorise)
     if (!document.fullscreenElement) {
         videoElement.requestFullscreen?.()
             .catch(() => {
-                // 2. Si le plein écran natif échoue ou est bloqué par la WebView, on applique le plan B (Plein écran virtuel)
                 applyVirtualFullscreen();
             });
     } else {
@@ -88,18 +84,15 @@ function exitVirtualFullscreen() {
     closeFsBtn.style.display = "none";
 }
 
-// Actions pour quitter/entrer
 videoElement.ondblclick = toggleFullScreen;
 closeFsBtn.onclick = exitVirtualFullscreen;
 
-// Gestionnaire d'échappement pour le plein écran natif standard
 document.onfullscreenchange = () => {
     if (!document.fullscreenElement) {
         exitVirtualFullscreen();
     }
 };
 
-// Ajouter également un bouton d'agrandissement sous la vidéo s'il n'existe pas déjà
 let zoomBtn = document.getElementById('zoomBtn');
 if (!zoomBtn) {
     zoomBtn = document.createElement('button');
@@ -114,7 +107,6 @@ if (!zoomBtn) {
     zoomBtn.style.borderRadius = "5px";
     zoomBtn.style.cursor = "pointer";
     zoomBtn.onclick = () => {
-        // Force directement le plein écran virtuel qui fonctionne partout, même sans permission
         if (videoElement.classList.contains('virtual-fullscreen')) {
             exitVirtualFullscreen();
         } else {
@@ -123,13 +115,35 @@ if (!zoomBtn) {
     };
     videoElement.parentNode.insertBefore(zoomBtn, videoElement.nextSibling);
 }
-// ----------------------------------------
+
+// --- FONCTIONS DE GESTION DE VEILLE (WAKE LOCK) ---
+async function requestWakeLock() {
+    try {
+        if ('keepAwake' in screen) {
+            // Méthode moderne alternative si disponible
+            await screen.keepAwake(true);
+        } else if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log("Mode arrière-plan (Wake Lock) activé !");
+        }
+    } catch (err) {
+        console.warn("Le Wake Lock n'a pas pu être activé :", err.message);
+    }
+}
+
+function releaseWakeLock() {
+    if (wakeLock !== null) {
+        wakeLock.release().then(() => {
+            wakeLock = null;
+            console.log("Mode arrière-plan désactivé.");
+        });
+    }
+}
 
 // Rôle Émetteur
 startShareBtn.onclick = async () => {
     statusDiv.innerText = "Demande d'autorisation de l'écran via Android...";
     
-    // Si l'application tourne sur le téléphone avec notre pont natif
     if (window.AndroidScreenShare) {
         window.AndroidScreenShare.requestScreenCapturePermission();
     } else {
@@ -142,7 +156,6 @@ startShareBtn.onclick = async () => {
 window.onNativeFrame = function(base64Image) {
     const img = new Image();
     img.onload = function() {
-        // Redimensionner le canvas si la taille de l'image change
         if (canvas.width !== img.width || canvas.height !== img.height) {
             canvas.width = img.width;
             canvas.height = img.height;
@@ -155,9 +168,11 @@ window.onNativeFrame = function(base64Image) {
 // Appelé automatiquement par Android quand l'utilisateur accepte le partage d'écran
 async function onNativeScreenShareGranted() {
     try {
-        statusDiv.innerText = "Capture active. Génération du flux vidéo...";
+        statusDiv.innerText = "Capture active. Activation du mode arrière-plan...";
         
-        // On capture le flux vidéo directement depuis le canvas de dessin à 8 FPS !
+        // On force le téléphone à rester actif
+        await requestWakeLock();
+
         localStream = canvas.captureStream(8); 
 
         videoElement.srcObject = localStream;
@@ -182,6 +197,7 @@ async function onNativeScreenShareGranted() {
 // Appelé si l'utilisateur refuse la pop-up système Android
 function onNativeScreenShareDenied() {
     statusDiv.innerText = "Le partage d'écran a été refusé sur le téléphone.";
+    releaseWakeLock();
 }
 
 // Fallback pour le développement sur ordinateur
@@ -206,7 +222,6 @@ async function fallbackWebGetDisplayMedia() {
     }
 }
 
-// Exposer les fonctions de callback pour le code Java natif d'Android
 window.onNativeScreenShareGranted = onNativeScreenShareGranted;
 window.onNativeScreenShareDenied = onNativeScreenShareDenied;
 
