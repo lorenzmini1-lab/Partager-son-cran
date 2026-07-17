@@ -51,6 +51,17 @@ style.innerHTML = `
     font-weight: bold;
     cursor: pointer;
   }
+  .btn-danger {
+    background-color: #ef476f !important;
+    color: white !important;
+    border: none !important;
+    padding: 10px 20px !important;
+    border-radius: 5px !important;
+    cursor: pointer !important;
+    font-weight: bold !important;
+    margin: 10px auto !important;
+    display: none;
+  }
 `;
 document.head.appendChild(style);
 
@@ -93,6 +104,7 @@ document.onfullscreenchange = () => {
     }
 };
 
+// Bouton Agrandir
 let zoomBtn = document.getElementById('zoomBtn');
 if (!zoomBtn) {
     zoomBtn = document.createElement('button');
@@ -116,11 +128,25 @@ if (!zoomBtn) {
     videoElement.parentNode.insertBefore(zoomBtn, videoElement.nextSibling);
 }
 
+// --- CRÉATION DU BOUTON ROUGE "ARRÊTER LE PARTAGE" ---
+let stopShareBtn = document.getElementById('stopShareBtn');
+if (!stopShareBtn) {
+    stopShareBtn = document.createElement('button');
+    stopShareBtn.id = "stopShareBtn";
+    stopShareBtn.className = "btn-danger";
+    stopShareBtn.innerText = "🛑 Arrêter le partage";
+    // On l'insère juste à côté du bouton de démarrage
+    startShareBtn.parentNode.insertBefore(stopShareBtn, startShareBtn.nextSibling);
+}
+
+stopShareBtn.onclick = () => {
+    stopAllSharing();
+};
+
 // --- FONCTIONS DE GESTION DE VEILLE (WAKE LOCK) ---
 async function requestWakeLock() {
     try {
         if ('keepAwake' in screen) {
-            // Méthode moderne alternative si disponible
             await screen.keepAwake(true);
         } else if ('wakeLock' in navigator) {
             wakeLock = await navigator.wakeLock.request('screen');
@@ -169,8 +195,9 @@ window.onNativeFrame = function(base64Image) {
 async function onNativeScreenShareGranted() {
     try {
         statusDiv.innerText = "Capture active. Activation du mode arrière-plan...";
+        startShareBtn.style.display = "none";
+        stopShareBtn.style.display = "block"; // Affiche le bouton rouge d'arrêt
         
-        // On force le téléphone à rester actif
         await requestWakeLock();
 
         localStream = canvas.captureStream(8); 
@@ -194,10 +221,35 @@ async function onNativeScreenShareGranted() {
     }
 }
 
+function stopAllSharing() {
+    statusDiv.innerText = "Partage arrêté.";
+    startShareBtn.style.display = "block";
+    stopShareBtn.style.display = "none";
+    
+    releaseWakeLock();
+    
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    if (localConnection) {
+        localConnection.close();
+        localConnection = null;
+    }
+    if (videoElement) {
+        videoElement.srcObject = null;
+    }
+    
+    // Appel du code natif Java pour tout couper proprement
+    if (window.AndroidScreenShare) {
+        window.AndroidScreenShare.stopScreenCapture();
+    }
+}
+
 // Appelé si l'utilisateur refuse la pop-up système Android
 function onNativeScreenShareDenied() {
     statusDiv.innerText = "Le partage d'écran a été refusé sur le téléphone.";
-    releaseWakeLock();
+    stopAllSharing();
 }
 
 // Fallback pour le développement sur ordinateur
@@ -207,6 +259,9 @@ async function fallbackWebGetDisplayMedia() {
         videoElement.srcObject = localStream;
         localConnection = new RTCPeerConnection(rtcConfig);
         localStream.getTracks().forEach(track => localConnection.addTrack(track, localStream));
+        
+        startShareBtn.style.display = "none";
+        stopShareBtn.style.display = "block";
         
         const offer = await localConnection.createOffer();
         await localConnection.setLocalDescription(offer);
