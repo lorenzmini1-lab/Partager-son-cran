@@ -118,7 +118,7 @@ jobs:
           }
           EOF
 
-          # 3. Configuration de MainActivity.java (Capture d'écran native -> Base64 WebView bridge)
+          # 3. Configuration de MainActivity.java (Correction de onDestroy)
           cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java
           package com.lorenzmini1.partager_son_cran;
 
@@ -193,11 +193,9 @@ jobs:
                   if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
                       WebView webView = this.getBridge().getWebView();
                       if (resultCode == RESULT_OK && data != null) {
-                          // Démarrage du service de premier plan requis
                           Intent serviceIntent = new Intent(this, ScreenCaptureService.class);
                           startService(serviceIntent);
 
-                          // Initialiser la projection média
                           mediaProjection = projectionManager.getMediaProjection(resultCode, data);
                           startCapture();
                           
@@ -213,7 +211,7 @@ jobs:
                   
                   DisplayMetrics metrics = new DisplayMetrics();
                   getWindowManager().getDefaultDisplay().getMetrics(metrics);
-                  int width = 480; // Résolution optimisée pour éviter de faire ramer la WebView
+                  int width = 480;
                   int height = (int) (width * ((float) metrics.heightPixels / metrics.widthPixels));
                   int density = metrics.densityDpi;
 
@@ -227,13 +225,12 @@ jobs:
 
                   isCapturing = true;
                   
-                  // Boucle de capture à 8 FPS
                   handler.post(new Runnable() {
                       @Override
                       public void run() {
                           if (!isCapturing) return;
                           captureFrameAndSend();
-                          handler.postDelayed(this, 125); // ~8 FPS
+                          handler.postDelayed(this, 125);
                       }
                   });
               }
@@ -257,7 +254,6 @@ jobs:
                       );
                       bitmap.copyPixelsFromBuffer(buffer);
 
-                      // Compresser en JPEG pour un transfert rapide
                       ByteArrayOutputStream baos = new ByteArrayOutputStream();
                       bitmap.compress(Bitmap.CompressFormat.JPEG, 60, baos);
                       byte[] byteArray = baos.toByteArray();
@@ -292,11 +288,7 @@ jobs:
                   stopService(serviceIntent);
               }
 
-              @Override
-              protected void onDestroy() {
-                  super.onDestroy();
-                  stopCapture();
-              }
+              // onDestroy() retiré car géré au niveau parent par Capacitor
           }
           EOF
 
