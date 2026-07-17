@@ -15,19 +15,25 @@ const statusDiv = document.getElementById('status');
 
 const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-// Création d'un Canvas virtuel pour le rendu de la capture d'écran Android
+// Canvas virtuel pour le rendu Android
 const canvas = document.createElement('canvas');
 const ctx = canvas.getContext('2d');
 canvas.width = 480;
-canvas.height = 854; // Standard format mobile
+canvas.height = 854;
 
 statusDiv.style.color = "#06d6a0";
 statusDiv.innerText = "Statut : Prêt";
-startShareBtn.innerText = "Partager l'écran";
+startShareBtn.innerText = "🚀 Démarrer le partage";
 
-// --- STYLE POUR LE PLEIN ÉCRAN VIRTUEL ---
+// --- INJECTION DU DESIGN PREMIUM ET PLEIN ÉCRAN ---
 const style = document.createElement('style');
 style.innerHTML = `
+  body {
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+    background: #1a1a2e !important;
+    color: #e2e8f0 !important;
+    padding: 20px !important;
+  }
   .virtual-fullscreen {
     position: fixed !important;
     top: 0 !important;
@@ -43,43 +49,57 @@ style.innerHTML = `
     top: 20px;
     right: 20px;
     z-index: 100000;
-    padding: 10px 15px;
-    background: rgba(255, 0, 0, 0.8);
+    padding: 12px 20px;
+    background: #ef476f;
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: 8px;
     font-weight: bold;
+    box-shadow: 0 4px 12px rgba(239, 71, 111, 0.4);
     cursor: pointer;
   }
   .btn-danger {
-    background-color: #ef476f !important;
+    background: linear-gradient(135deg, #ff4d6d, #ef476f) !important;
     color: white !important;
     border: none !important;
-    padding: 10px 20px !important;
-    border-radius: 5px !important;
+    padding: 14px 28px !important;
+    border-radius: 10px !important;
     cursor: pointer !important;
     font-weight: bold !important;
-    margin: 10px auto !important;
+    margin: 15px auto !important;
+    box-shadow: 0 4px 15px rgba(239, 71, 111, 0.4);
     display: none;
+    transition: transform 0.2s;
+  }
+  .btn-danger:active { transform: scale(0.98); }
+  
+  /* Animation pulsante pour le statut en cours de partage */
+  .status-sharing {
+    color: #06d6a0 !important;
+    animation: pulse 1.5s infinite;
+    font-weight: bold;
+  }
+  @keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
   }
 `;
 document.head.appendChild(style);
 
 const closeFsBtn = document.createElement('button');
-closeFsBtn.innerText = "Quitter le plein écran";
+closeFsBtn.innerText = "❌ Quitter le plein écran";
 closeFsBtn.className = "close-fullscreen-btn";
 closeFsBtn.style.display = "none";
 document.body.appendChild(closeFsBtn);
 
 videoElement.style.cursor = "pointer";
-videoElement.title = "Double-clique pour agrandir";
+videoElement.style.borderRadius = "12px";
+videoElement.style.boxShadow = "0 8px 24px rgba(0,0,0,0.5)";
 
 const toggleFullScreen = () => {
     if (!document.fullscreenElement) {
-        videoElement.requestFullscreen?.()
-            .catch(() => {
-                applyVirtualFullscreen();
-            });
+        videoElement.requestFullscreen?.().catch(() => applyVirtualFullscreen());
     } else {
         document.exitFullscreen?.();
     }
@@ -99,86 +119,47 @@ videoElement.ondblclick = toggleFullScreen;
 closeFsBtn.onclick = exitVirtualFullscreen;
 
 document.onfullscreenchange = () => {
-    if (!document.fullscreenElement) {
-        exitVirtualFullscreen();
-    }
+    if (!document.fullscreenElement) exitVirtualFullscreen();
 };
 
-// Bouton Agrandir
-let zoomBtn = document.getElementById('zoomBtn');
-if (!zoomBtn) {
-    zoomBtn = document.createElement('button');
-    zoomBtn.id = 'zoomBtn';
-    zoomBtn.innerText = "📺 Agrandir / Plein écran";
-    zoomBtn.style.margin = "10px auto";
-    zoomBtn.style.display = "block";
-    zoomBtn.style.padding = "8px 16px";
-    zoomBtn.style.backgroundColor = "#118ab2";
-    zoomBtn.style.color = "white";
-    zoomBtn.style.border = "none";
-    zoomBtn.style.borderRadius = "5px";
-    zoomBtn.style.cursor = "pointer";
-    zoomBtn.onclick = () => {
-        if (videoElement.classList.contains('virtual-fullscreen')) {
-            exitVirtualFullscreen();
-        } else {
-            applyVirtualFullscreen();
-        }
-    };
-    videoElement.parentNode.insertBefore(zoomBtn, videoElement.nextSibling);
-}
-
-// --- CRÉATION DU BOUTON ROUGE "ARRÊTER LE PARTAGE" ---
+// Injection dynamique du bouton rouge d'arrêt s'il n'existe pas
 let stopShareBtn = document.getElementById('stopShareBtn');
 if (!stopShareBtn) {
     stopShareBtn = document.createElement('button');
     stopShareBtn.id = "stopShareBtn";
     stopShareBtn.className = "btn-danger";
     stopShareBtn.innerText = "🛑 Arrêter le partage";
-    // On l'insère juste à côté du bouton de démarrage
     startShareBtn.parentNode.insertBefore(stopShareBtn, startShareBtn.nextSibling);
 }
+stopShareBtn.onclick = () => stopAllSharing();
 
-stopShareBtn.onclick = () => {
-    stopAllSharing();
-};
-
-// --- FONCTIONS DE GESTION DE VEILLE (WAKE LOCK) ---
+// Maintien d'éveil matériel (Wake Lock)
 async function requestWakeLock() {
     try {
-        if ('keepAwake' in screen) {
-            await screen.keepAwake(true);
-        } else if ('wakeLock' in navigator) {
+        if ('wakeLock' in navigator) {
             wakeLock = await navigator.wakeLock.request('screen');
-            console.log("Mode arrière-plan (Wake Lock) activé !");
         }
     } catch (err) {
-        console.warn("Le Wake Lock n'a pas pu être activé :", err.message);
+        console.warn("WakeLock non activé:", err.message);
     }
 }
 
 function releaseWakeLock() {
     if (wakeLock !== null) {
-        wakeLock.release().then(() => {
-            wakeLock = null;
-            console.log("Mode arrière-plan désactivé.");
-        });
+        wakeLock.release().then(() => { wakeLock = null; });
     }
 }
 
 // Rôle Émetteur
 startShareBtn.onclick = async () => {
-    statusDiv.innerText = "Demande d'autorisation de l'écran via Android...";
-    
+    statusDiv.innerText = "Demande d'autorisation de l'écran...";
     if (window.AndroidScreenShare) {
         window.AndroidScreenShare.requestScreenCapturePermission();
     } else {
-        statusDiv.innerText = "Mode PC détecté. Tentative de capture standard...";
         fallbackWebGetDisplayMedia();
     }
 };
 
-// Réception des frames de l'écran natif envoyées par Java
 window.onNativeFrame = function(base64Image) {
     const img = new Image();
     img.onload = function() {
@@ -191,19 +172,30 @@ window.onNativeFrame = function(base64Image) {
     img.src = "data:image/jpeg;base64," + base64Image;
 };
 
-// Appelé automatiquement par Android quand l'utilisateur accepte le partage d'écran
 async function onNativeScreenShareGranted() {
     try {
-        statusDiv.innerText = "Capture active. Activation du mode arrière-plan...";
+        statusDiv.className = "status-sharing";
+        statusDiv.innerText = "🔴 Partage en cours (Arrière-plan actif)";
         startShareBtn.style.display = "none";
-        stopShareBtn.style.display = "block"; // Affiche le bouton rouge d'arrêt
+        stopShareBtn.style.display = "block";
         
         await requestWakeLock();
-
         localStream = canvas.captureStream(8); 
-
         videoElement.srcObject = localStream;
+        
         localConnection = new RTCPeerConnection(rtcConfig);
+        
+        // --- AMÉLIORATION : GESTION DE LA RECONNEXION AUTOMATIQUE ---
+        localConnection.oniceconnectionstatechange = () => {
+            if (localConnection.iceConnectionState === "disconnected" || localConnection.iceConnectionState === "failed") {
+                statusDiv.innerText = "🔄 Reconnexion en cours...";
+                // Tente une relance automatique silencieuse des canaux ICE
+                localConnection.restartIce?.();
+            } else if (localConnection.iceConnectionState === "connected") {
+                statusDiv.innerText = "🔴 Partage en cours (Arrière-plan actif)";
+            }
+        };
+
         localStream.getTracks().forEach(track => localConnection.addTrack(track, localStream));
         
         const offer = await localConnection.createOffer();
@@ -211,83 +203,72 @@ async function onNativeScreenShareGranted() {
         localConnection.onicecandidate = (e) => {
             if (!e.candidate) {
                 offerOut.value = btoa(JSON.stringify(localConnection.localDescription));
-                statusDiv.innerText = "Invitation prête ! Transmets-la au récepteur.";
                 connectBtn.disabled = false;
             }
         };
     } catch (err) {
-        statusDiv.innerText = "Erreur de flux : " + err.message;
-        console.error(err);
+        statusDiv.className = "";
+        statusDiv.innerText = "Erreur : " + err.message;
     }
 }
 
 function stopAllSharing() {
-    statusDiv.innerText = "Partage arrêté.";
-    startShareBtn.style.display = "block";
+    statusDiv.className = "";
+    statusDiv.innerText = "Statut : Partage arrêté.";
+    startShareBtn.style.style.display = "block";
     stopShareBtn.style.display = "none";
     
     releaseWakeLock();
+    if (localStream) { localStream.getTracks().forEach(track => track.stop()); localStream = null; }
+    if (localConnection) { localConnection.close(); localConnection = null; }
+    if (videoElement) videoElement.srcObject = null;
     
-    if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-        localStream = null;
-    }
-    if (localConnection) {
-        localConnection.close();
-        localConnection = null;
-    }
-    if (videoElement) {
-        videoElement.srcObject = null;
-    }
-    
-    // Appel du code natif Java pour tout couper proprement
     if (window.AndroidScreenShare) {
         window.AndroidScreenShare.stopScreenCapture();
     }
 }
 
-// Appelé si l'utilisateur refuse la pop-up système Android
+// Reçoit l'action d'arrêt directement depuis le clic sur la notification Android
+window.onNativeStopCommand = function() {
+    stopAllSharing();
+};
+
 function onNativeScreenShareDenied() {
-    statusDiv.innerText = "Le partage d'écran a été refusé sur le téléphone.";
+    statusDiv.innerText = "Le partage d'écran a été refusé.";
     stopAllSharing();
 }
 
-// Fallback pour le développement sur ordinateur
 async function fallbackWebGetDisplayMedia() {
     try {
         localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         videoElement.srcObject = localStream;
         localConnection = new RTCPeerConnection(rtcConfig);
         localStream.getTracks().forEach(track => localConnection.addTrack(track, localStream));
-        
         startShareBtn.style.display = "none";
         stopShareBtn.style.display = "block";
-        
         const offer = await localConnection.createOffer();
         await localConnection.setLocalDescription(offer);
         localConnection.onicecandidate = (e) => {
             if (!e.candidate) {
                 offerOut.value = btoa(JSON.stringify(localConnection.localDescription));
-                statusDiv.innerText = "Invitation prête ! (PC)";
                 connectBtn.disabled = false;
             }
         };
     } catch(e) {
-        statusDiv.innerText = "Échec de la capture PC : " + e.message;
+        statusDiv.innerText = "Échec : " + e.message;
     }
 }
 
 window.onNativeScreenShareGranted = onNativeScreenShareGranted;
 window.onNativeScreenShareDenied = onNativeScreenShareDenied;
 
-// Finaliser connexion
 connectBtn.onclick = async () => {
     try {
         const answer = JSON.parse(atob(answerIn.value));
         await localConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        statusDiv.innerText = "Connecté ! Partage en cours.";
+        statusDiv.innerText = "✅ Connecté avec succès !";
     } catch (err) {
-        statusDiv.innerText = "Erreur finalisation : " + err.message;
+        statusDiv.innerText = "Erreur : " + err.message;
     }
 };
 
@@ -303,7 +284,6 @@ createAnswerBtn.onclick = async () => {
         remoteConnection.onicecandidate = (e) => {
             if (!e.candidate) {
                 answerOut.value = btoa(JSON.stringify(remoteConnection.localDescription));
-                statusDiv.innerText = "Réponse générée ! Copie-la vers l'émetteur.";
             }
         };
     } catch (err) {
