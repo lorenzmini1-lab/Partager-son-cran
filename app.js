@@ -36,23 +36,15 @@ async function onNativeScreenShareGranted() {
     try {
         statusDiv.innerText = "Service actif. Récupération du flux vidéo...";
         
-        // Maintenant que le service de premier plan tourne et que l'autorisation est donnée,
-        // l'appel à getDisplayMedia ou le fallback getUserMedia va passer sans erreur de permission !
+        // Utilisation propre et directe de getDisplayMedia maintenant que le service Android est démarré.
+        // Cela évite l'erreur "Requested device not found".
         if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
             localStream = await navigator.mediaDevices.getDisplayMedia({
                 video: true,
                 audio: false
             });
         } else {
-            // Secours si getDisplayMedia est bloqué sur cette version de WebView
-            localStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    mandatory: {
-                        chromeMediaSource: 'screen'
-                    }
-                },
-                audio: false
-            });
+            throw new Error("L'API de capture d'écran n'est pas supportée par cette WebView.");
         }
 
         videoElement.srcObject = localStream;
