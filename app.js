@@ -14,52 +14,22 @@ const statusDiv = document.getElementById('status');
 
 const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-// Détection classique du navigateur
-let hasDisplayMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
-
-// Vérification si nous sommes sur l'application native Capacitor
-const isCapacitor = !!window.Capacitor;
-
 statusDiv.style.color = "#06d6a0";
 statusDiv.innerText = "Statut : Prêt";
-
-if (isCapacitor) {
-    startShareBtn.innerText = "Partager l'écran (Mobile)";
-} else {
-    startShareBtn.innerText = hasDisplayMedia ? "Partager l'écran" : "Démarrer la caméra";
-}
+startShareBtn.innerText = "Partager l'écran";
 
 // Rôle Émetteur
 startShareBtn.onclick = async () => {
     try {
-        statusDiv.innerText = "Démarrage de la capture...";
+        statusDiv.innerText = "Demande d'autorisation de l'écran...";
         
-        if (isCapacitor) {
-            // Sur Android, nous devons demander la projection média native
-            // Capacitor utilise une implémentation native pour récupérer le flux d'écran
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                // Sur les versions récentes, getDisplayMedia peut être simulé ou injecté par le conteneur
-                try {
-                    localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-                } catch (e) {
-                    // Fallback natif si l'API standard échoue dans la WebView
-                    localStream = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            mandatory: {
-                                chromeMediaSource: 'screen'
-                            }
-                        },
-                        audio: true
-                    });
-                }
-            }
-        } else {
-            // Sur ordinateur / Navigateur classique
-            if (hasDisplayMedia) {
-                localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-            } else {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
-            }
+        // On tente d'abord d'obtenir l'écran (qui va maintenant fonctionner grâce à notre modification native)
+        try {
+            localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        } catch (e) {
+            console.log("getDisplayMedia échoué ou non supporté, tentative avec getUserMedia :", e);
+            // Fallback sur la caméra si le partage d'écran est annulé
+            localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
         }
 
         videoElement.srcObject = localStream;
