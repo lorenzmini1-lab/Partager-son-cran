@@ -14,6 +14,12 @@ const statusDiv = document.getElementById('status');
 
 const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
+// Création d'un Canvas virtuel pour le rendu de la capture d'écran Android
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = 480;
+canvas.height = 854; // Standard format mobile
+
 statusDiv.style.color = "#06d6a0";
 statusDiv.innerText = "Statut : Prêt";
 startShareBtn.innerText = "Partager l'écran";
@@ -26,26 +32,33 @@ startShareBtn.onclick = async () => {
     if (window.AndroidScreenShare) {
         window.AndroidScreenShare.requestScreenCapturePermission();
     } else {
-        statusDiv.innerText = "Mode PC/Navigateur détecté. Tentative de capture...";
+        statusDiv.innerText = "Mode PC détecté. Tentative de capture standard...";
         fallbackWebGetDisplayMedia();
     }
 };
 
-// Appelé automatiquement par Android quand l'utilisateur accepte la boîte de dialogue système
+// Réception des frames de l'écran natif envoyées par Java
+window.onNativeFrame = function(base64Image) {
+    const img = new Image();
+    img.onload = function() {
+        // Redimensionner le canvas si la taille de l'image change
+        if (canvas.width !== img.width || canvas.height !== img.height) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+        }
+        ctx.drawImage(img, 0, 0);
+    };
+    img.src = "data:image/jpeg;base64," + base64Image;
+};
+
+// Appelé automatiquement par Android quand l'utilisateur accepte le partage d'écran
 async function onNativeScreenShareGranted() {
     try {
-        statusDiv.innerText = "Service actif. Récupération du flux vidéo...";
+        statusDiv.innerText = "Capture active. Génération du flux vidéo...";
         
-        // Utilisation propre et directe de getDisplayMedia maintenant que le service Android est démarré.
-        // Cela évite l'erreur "Requested device not found".
-        if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-            localStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
-                audio: false
-            });
-        } else {
-            throw new Error("L'API de capture d'écran n'est pas supportée par cette WebView.");
-        }
+        // On capture le flux vidéo directement depuis le canvas de dessin à 8 FPS !
+        // C'est entièrement compatible avec tous les téléphones et toutes les WebViews.
+        localStream = canvas.captureStream(8); 
 
         videoElement.srcObject = localStream;
         localConnection = new RTCPeerConnection(rtcConfig);
