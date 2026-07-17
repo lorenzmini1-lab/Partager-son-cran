@@ -94,7 +94,7 @@ jobs:
                           .setContentTitle("Partage d'écran actif")
                           .setContentText("L'application capture l'écran en tâche de fond.")
                           .setSmallIcon(android.R.drawable.ic_media_play)
-                          .setOngoing(true) // Empêche de fermer la notification par glissement
+                          .setOngoing(true) // Empêche l'utilisateur de fermer la notification par glissement
                           .build();
                   
                   startForeground(1, notification);
@@ -121,7 +121,7 @@ jobs:
           }
           EOF
 
-          # 3. Configuration de MainActivity.java
+          # 3. Configuration de MainActivity.java (Persistant et sans onDestroy interdit)
           cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java
           package com.lorenzmini1.partager_son_cran;
 
@@ -160,11 +160,11 @@ jobs:
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-                  
                   projectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
                   
                   WebView webView = this.getBridge().getWebView();
                   webView.getSettings().setJavaScriptEnabled(true);
+                  webView.getSettings().setDomStorageEnabled(true);
                   webView.addJavascriptInterface(new WebAppInterface(), "AndroidScreenShare");
                   
                   webView.setWebChromeClient(new WebChromeClient() {
@@ -179,8 +179,7 @@ jobs:
                   @JavascriptInterface
                   public void requestScreenCapturePermission() {
                       if (projectionManager != null) {
-                          Intent captureIntent = projectionManager.createScreenCaptureIntent();
-                          startActivityForResult(captureIntent, SCREEN_CAPTURE_REQUEST_CODE);
+                          startActivityForResult(projectionManager.createScreenCaptureIntent(), SCREEN_CAPTURE_REQUEST_CODE);
                       }
                   }
 
@@ -193,19 +192,25 @@ jobs:
               @Override
               protected void onActivityResult(int requestCode, int resultCode, Intent data) {
                   super.onActivityResult(requestCode, resultCode, data);
-                  if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
-                      WebView webView = this.getBridge().getWebView();
-                      if (resultCode == RESULT_OK && data != null) {
-                          Intent serviceIntent = new Intent(this, ScreenCaptureService.class);
-                          startService(serviceIntent);
+                  if (requestCode == SCREEN_CAPTURE_REQUEST_CODE && resultCode == RESULT_OK && data != null) {
+                      // Démarrage du service de premier plan persistant pour l'arrière-plan
+                      Intent serviceIntent = new Intent(this, ScreenCaptureService.class);
+                      startForegroundService(serviceIntent);
 
-                          mediaProjection = projectionManager.getMediaProjection(resultCode, data);
-                          startCapture();
-                          
-                          webView.post(() -> webView.evaluateJavascript("javascript:onNativeScreenShareGranted();", null));
-                      } else {
-                          webView.post(() -> webView.evaluateJavascript("javascript:onNativeScreenShareDenied();", null));
-                      }
+                      mediaProjection = projectionManager.getMediaProjection(resultCode, data);
+                      
+                      // Enregistrement d'un callback pour écouter les arrêts système du MediaProjection
+                      mediaProjection.registerCallback(new MediaProjection.Callback() {
+                          @Override
+                          public void onStop() {
+                              stopCapture();
+                          }
+                      }, handler);
+
+                      startCapture();
+                      getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript("javascript:onNativeScreenShareGranted();", null));
+                  } else if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
+                      getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript("javascript:onNativeScreenShareDenied();", null));
                   }
               }
 
@@ -227,23 +232,23 @@ jobs:
                   );
 
                   isCapturing = true;
-                  
-                  handler.post(new Runnable() {
-                      @Override
-                      public void run() {
-                          if (!isCapturing) return;
-                          captureFrameAndSend();
-                          handler.postDelayed(this, 125);
-                      }
-                  });
+                  handler.post(captureRunnable);
               }
+
+              private Runnable captureRunnable = new Runnable() {
+                  @Override
+                  public void run() {
+                      if (!isCapturing) return;
+                      captureFrameAndSend();
+                      handler.postDelayed(this, 200); // 5 images par seconde (très stable pour la batterie)
+                  }
+              };
 
               private void captureFrameAndSend() {
                   if (imageReader == null) return;
-                  Image image = imageReader.acquireLatestImage();
-                  if (image == null) return;
-
-                  try {
+                  try (Image image = imageReader.acquireLatestImage()) {
+                      if (image == null) return;
+                      
                       Image.Plane[] planes = image.getPlanes();
                       ByteBuffer buffer = planes[0].getBuffer();
                       int pixelStride = planes[0].getPixelStride();
@@ -258,7 +263,7 @@ jobs:
                       bitmap.copyPixelsFromBuffer(buffer);
 
                       ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                      bitmap.compress(Bitmap.CompressFormat.JPEG, 60, baos);
+                      bitmap.compress(Bitmap.CompressFormat.JPEG, 40, baos); // Qualité réduite à 40% pour stabiliser la RAM
                       byte[] byteArray = baos.toByteArray();
                       String base64Image = Base64.encodeToString(byteArray, Base64.NO_WRAP);
 
@@ -268,8 +273,6 @@ jobs:
                       bitmap.recycle();
                   } catch (Exception e) {
                       e.printStackTrace();
-                  } finally {
-                      image.close();
                   }
               }
 
