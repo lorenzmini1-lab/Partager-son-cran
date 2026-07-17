@@ -29,7 +29,6 @@ jobs:
         run: |
           npm install
           npm install @capacitor/android
-          npm install @capacitor-community/screen-recorder
           chmod -R +x node_modules/.bin || true
 
       - name: Prepare Web Directory
@@ -43,14 +42,15 @@ jobs:
           npx cap init "Partage Ecran" "com.lorenzmini1.partager_son_cran" --web-dir=www
           npx cap add android
 
-      - name: Inject Android Permissions & Services
+      - name: Inject Android Permissions, Services & WebChromeClient
         run: |
           node -e "
           const fs = require('fs');
-          const file = 'android/app/src/main/AndroidManifest.xml';
-          let content = fs.readFileSync(file, 'utf8');
           
-          // 1. Déclarations des permissions de sécurité requises
+          // 1. Injection des permissions et services dans AndroidManifest.xml
+          const manifestFile = 'android/app/src/main/AndroidManifest.xml';
+          let manifestContent = fs.readFileSync(manifestFile, 'utf8');
+          
           const permissions = '\n' +
             '    <uses-permission android:name=\"android.permission.CAMERA\" />\n' +
             '    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />\n' +
@@ -58,20 +58,43 @@ jobs:
             '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />\n' +
             '    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION\" />\n';
           
-          // Insertion propre des permissions juste après <manifest ...>
-          content = content.replace(/(<manifest[^>]*>)/, '\$1' + permissions);
+          manifestContent = manifestContent.replace(/(<manifest[^>]*>)/, '\$1' + permissions);
           
-          // 2. Déclaration du service requis par Android pour la projection de médias en tâche de fond
           const serviceDefinition = '\n' +
             '        <service\n' +
             '            android:name=\"com.ionicframework.capacitor.CordovaInterfaceService\"\n' +
             '            android:enabled=\"true\"\n' +
             '            android:exported=\"false\" />\n';
           
-          // Insertion du service juste avant la fermeture de la balise </application>
-          content = content.replace('</application>', serviceDefinition + '    </application>');
+          manifestContent = manifestContent.replace('</application>', serviceDefinition + '    </application>');
+          fs.writeFileSync(manifestFile, manifestContent, 'utf8');
           
-          fs.writeFileSync(file, content, 'utf8');
+          // 2. Configuration de MainActivity.java pour autoriser getDisplayMedia dans la WebView
+          const activityFile = 'android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java';
+          if (fs.existsSync(activityFile)) {
+              let activityContent = fs.readFileSync(activityFile, 'utf8');
+              
+              // On importe le WebChromeClient et PermissionRequest pour valider les requêtes d'écran
+              const imports = '\nimport android.webkit.WebChromeClient;\nimport android.webkit.PermissionRequest;\nimport android.webkit.WebView;\nimport com.getcapacitor.BridgeActivity;\n';
+              activityContent = activityContent.replace('import com.getcapacitor.BridgeActivity;', imports);
+              
+              // On configure la WebView pour accepter automatiquement les demandes de capture d'écran
+              const customBridge = '\n' +
+                '  @Override\n' +
+                '  public void onStart() {\n' +
+                '    super.onStart();\n' +
+                '    WebView webView = this.getBridge().getWebView();\n' +
+                '    webView.setWebChromeClient(new WebChromeClient() {\n' +
+                '      @Override\n' +
+                '      public void onPermissionRequest(final PermissionRequest request) {\n' +
+                '        request.grant(request.getResources());\n' +
+                '      }\n' +
+                '    });\n' +
+                '  }\n';
+              
+              activityContent = activityContent.replace('public class MainActivity extends BridgeActivity {}', 'public class MainActivity extends BridgeActivity {' + customBridge + '}');
+              fs.writeFileSync(activityFile, activityContent, 'utf8');
+          }
           "
 
       - name: Generate App Icons
