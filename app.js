@@ -20,47 +20,46 @@ startShareBtn.innerText = "Partager l'écran";
 
 // Rôle Émetteur
 startShareBtn.onclick = async () => {
-    try {
-        statusDiv.innerText = "Demande de capture d'écran...";
-        
-        // Si nous sommes sur Android dans Capacitor avec le plugin installé
-        if (window.cordova && window.cordova.plugins && window.cordova.plugins.screenshare) {
-            statusDiv.innerText = "Démarrage de la capture d'écran native...";
-            window.cordova.plugins.screenshare.startShare(async (stream) => {
-                localStream = stream;
-                initRTCPeerConnection();
-            }, (err) => {
-                statusDiv.innerText = "Erreur native : " + err;
-            });
-        } else {
-            // Sur navigateur PC ou en fallback de sécurité[span_2](start_span)[span_2](end_span)
-            if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-                localStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true,
-                    audio: false
-                });
-                initRTCPeerConnection();
-            } else {
-                // Fallback caméra arrière si tout le reste échoue[span_3](start_span)[span_3](end_span)
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" },
-                    audio: false
-                });
-                initRTCPeerConnection();
-            }
-        }
-    } catch (err) { 
-        statusDiv.innerText = "Erreur d'initialisation : " + err.message; 
-        console.error(err);
+    statusDiv.innerText = "Demande d'autorisation de l'écran via Android...";
+    
+    // Si l'application tourne sur le téléphone avec notre pont natif
+    if (window.AndroidScreenShare) {
+        window.AndroidScreenShare.requestScreenCapturePermission();
+    } else {
+        statusDiv.innerText = "Mode PC/Navigateur détecté. Tentative de capture...";
+        fallbackWebGetDisplayMedia();
     }
 };
 
-function initRTCPeerConnection() {
-    videoElement.srcObject = localStream;
-    localConnection = new RTCPeerConnection(rtcConfig);
-    localStream.getTracks().forEach(track => localConnection.addTrack(track, localStream));
-    
-    localConnection.createOffer().then(async (offer) => {
+// Appelé automatiquement par Android quand l'utilisateur accepte la boîte de dialogue système
+async function onNativeScreenShareGranted() {
+    try {
+        statusDiv.innerText = "Service actif. Récupération du flux vidéo...";
+        
+        // Maintenant que le service de premier plan tourne et que l'autorisation est donnée,
+        // l'appel à getDisplayMedia ou le fallback getUserMedia va passer sans erreur de permission !
+        if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+            localStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: false
+            });
+        } else {
+            // Secours si getDisplayMedia est bloqué sur cette version de WebView
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    mandatory: {
+                        chromeMediaSource: 'screen'
+                    }
+                },
+                audio: false
+            });
+        }
+
+        videoElement.srcObject = localStream;
+        localConnection = new RTCPeerConnection(rtcConfig);
+        localStream.getTracks().forEach(track => localConnection.addTrack(track, localStream));
+        
+        const offer = await localConnection.createOffer();
         await localConnection.setLocalDescription(offer);
         localConnection.onicecandidate = (e) => {
             if (!e.candidate) {
@@ -69,8 +68,42 @@ function initRTCPeerConnection() {
                 connectBtn.disabled = false;
             }
         };
-    });
+    } catch (err) {
+        statusDiv.innerText = "Erreur de flux : " + err.message;
+        console.error(err);
+    }
 }
+
+// Appelé si l'utilisateur refuse la pop-up système Android
+function onNativeScreenShareDenied() {
+    statusDiv.innerText = "Le partage d'écran a été refusé sur le téléphone.";
+}
+
+// Fallback pour le développement sur ordinateur
+async function fallbackWebGetDisplayMedia() {
+    try {
+        localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        videoElement.srcObject = localStream;
+        localConnection = new RTCPeerConnection(rtcConfig);
+        localStream.getTracks().forEach(track => localConnection.addTrack(track, localStream));
+        
+        const offer = await localConnection.createOffer();
+        await localConnection.setLocalDescription(offer);
+        localConnection.onicecandidate = (e) => {
+            if (!e.candidate) {
+                offerOut.value = btoa(JSON.stringify(localConnection.localDescription));
+                statusDiv.innerText = "Invitation prête ! (PC)";
+                connectBtn.disabled = false;
+            }
+        };
+    } catch(e) {
+        statusDiv.innerText = "Échec de la capture PC : " + e.message;
+    }
+}
+
+// Exposer les fonctions de callback pour le code Java natif d'Android
+window.onNativeScreenShareGranted = onNativeScreenShareGranted;
+window.onNativeScreenShareDenied = onNativeScreenShareDenied;
 
 // Finaliser connexion
 connectBtn.onclick = async () => {
