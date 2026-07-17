@@ -60,7 +60,7 @@ jobs:
           
           const serviceDefinition = '\n' +
             '        <service\n' +
-            '            android:name=\"com.lorenzmini1.partager_son_cran.ScreenCaptureService\"\n' +
+            '            android:name=\"com.lorenzmini1.partager_son_ecran.ScreenCaptureService\"\n' +
             '            android:foregroundServiceType=\"mediaProjection\"\n' +
             '            android:enabled=\"true\"\n' +
             '            android:exported=\"false\" />\n';
@@ -134,8 +134,8 @@ jobs:
           }
           EOF
 
-          # 3. Configuration de MainActivity.java (Liaison Notification -> WebView)
-          cat << 'EOF' > android/app/src/main/java/com/lorenzmini1.partager_son_cran/MainActivity.java
+          # 3. Configuration de MainActivity.java (Correction du chemin avec le / à la place du .)
+          cat << 'EOF' > android/app/src/main/java/com/lorenzmini1/partager_son_cran/MainActivity.java
           package com.lorenzmini1.partager_son_cran;
 
           import android.content.Context;
